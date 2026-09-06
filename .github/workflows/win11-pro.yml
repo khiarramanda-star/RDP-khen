@@ -1,4 +1,4 @@
-name: KHEN RDP ULTIMATE
+name: KHEN RDP - Tailscale + Cloudflare
 on:
   workflow_dispatch:
     inputs:
@@ -20,7 +20,6 @@ env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
-  ZT_NETWORK: 743993800fc54708
   DATA_PATH: C:\khen-data
 
 jobs:
@@ -41,7 +40,7 @@ jobs:
     - name: Cleanup
       run: |
         Write-Host "========================================"
-        Write-Host "  KHEN RDP ULTIMATE - ${{ github.event.inputs.version }}"
+        Write-Host "  KHEN RDP - ${{ github.event.inputs.version }}"
         Write-Host "========================================"
         
         Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
@@ -51,7 +50,7 @@ jobs:
         Write-Host "✅ Cleanup done"
     
     # ==========================================
-    # 2. RESTORE DATA (CACHE)
+    # 2. RESTORE DATA
     # ==========================================
     - name: Restore Cache
       uses: actions/cache@v4
@@ -126,7 +125,7 @@ jobs:
         # Config
         @"
         ╔═══════════════════════════════════════════════════╗
-        ║              KHEN RDP ULTIMATE                   ║
+        ║              KHEN RDP - TAILSCALE                ║
         ╠═══════════════════════════════════════════════════╣
         ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
         ║ USER      : ${{ env.RDP_USER }}                 ║
@@ -147,7 +146,7 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 5. CLOUDFLARE TUNNEL (FIXED)
+    # 5. CLOUDFLARE TUNNEL
     # ==========================================
     - name: Cloudflare Tunnel
       env:
@@ -158,83 +157,69 @@ jobs:
         Write-Host "========================================"
         
         if (-not $env:CF_TOKEN) {
-          Write-Host "❌ ERROR: CLOUDFLARE_TUNNEL_TOKEN not set!"
-          Write-Host "⚠️  Set secret dulu di Settings → Secrets → Actions"
+          Write-Host "⚠️ No Cloudflare token, skip..."
           exit 0
         }
         
         curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
         
-        Write-Host "🔄 Starting Cloudflare Tunnel..."
         Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
         
         Start-Sleep -Seconds 5
-        
-        # Cek process
-        $process = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
-        if ($process) {
-          Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
-          Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
-        } else {
-          Write-Host "⚠️ Tunnel mungkin gagal, cek log"
-        }
+        Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+        Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
     
     # ==========================================
-    # 6. ZEROTIER VPN (FIXED)
+    # 6. TAILSCALE VPN (GANTI ZEROTIER)
     # ==========================================
-    - name: ZeroTier VPN
+    - name: Tailscale VPN
+      env:
+        TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
       run: |
         Write-Host "========================================"
-        Write-Host "  ZEROTIER VPN"
+        Write-Host "  TAILSCALE VPN"
         Write-Host "========================================"
         
-        # Download ZeroTier
-        curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
-        if (-not (Test-Path ZeroTier.msi)) {
-          Write-Host "⚠️ Download ZeroTier gagal, skip VPN..."
+        if (-not $env:TS_AUTHKEY) {
+          Write-Host "⚠️ No Tailscale auth key, skip VPN..."
+          exit 0
+        }
+        
+        # Download Tailscale
+        curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
+        
+        if (-not (Test-Path tailscale.msi)) {
+          Write-Host "⚠️ Download Tailscale gagal, skip VPN..."
           exit 0
         }
         
         # Install
-        msiexec /i ZeroTier.msi /quiet /norestart
+        msiexec /i tailscale.msi /quiet /norestart
         Start-Sleep -Seconds 15
         
-        # Cek path ZeroTier
-        $ztPaths = @(
-          "C:\Program Files\ZeroTier\One\zerotier-one.exe",
-          "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe"
-        )
-        
-        $zt = $null
-        foreach ($p in $ztPaths) {
-          if (Test-Path $p) {
-            $zt = $p
-            break
-          }
-        }
-        
-        if (-not $zt) {
-          Write-Host "⚠️ ZeroTier not found, skip VPN..."
+        # Cek path
+        $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+        if (-not (Test-Path $tsPath)) {
+          Write-Host "⚠️ Tailscale not found, skip VPN..."
           exit 0
         }
         
-        # Join network
-        & $zt -q join ${{ env.ZT_NETWORK }}
-        Start-Sleep -Seconds 15
+        # Login
+        & $tsPath login --auth-key $env:TS_AUTHKEY
+        Start-Sleep -Seconds 5
         
         # Ambil IP
-        $ip = & $zt -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
+        $ip = & $tsPath ip
         
         Write-Host ""
         Write-Host "========================================"
-        Write-Host "  ✅ ZEROTIER ACTIVE"
+        Write-Host "  ✅ TAILSCALE ACTIVE"
         Write-Host "========================================"
         Write-Host "IP   : $ip"
         Write-Host "USER : ${{ env.RDP_USER }}"
         Write-Host "PASS : ${{ env.RDP_PASS }}"
         Write-Host "========================================"
-        Write-Host "⚠️  Buka ZeroTier Dashboard, Authorize device!"
-        Write-Host "⚠️  Kalo gak ada IP, cek dashboard dan authorize"
+        Write-Host "⚠️  Bisa akses RDP pake IP Tailscale"
         Write-Host "========================================"
     
     # ==========================================
@@ -243,14 +228,14 @@ jobs:
     - name: Keep Alive
       run: |
         while ($true) {
-          Write-Host "$(Get-Date) - KHEN RDP ULTIMATE ACTIVE"
+          Write-Host "$(Get-Date) - KHEN RDP ACTIVE"
           Start-Sleep -Seconds 300
         }
     
     # ==========================================
-    # 8. BACKUP KE ARTIFACT
+    # 8. BACKUP
     # ==========================================
-    - name: Upload Backup ke Artifact
+    - name: Upload Backup
       uses: actions/upload-artifact@v4
       with:
         name: khen-data-backup
@@ -258,14 +243,14 @@ jobs:
         retention-days: 90
     
     # ==========================================
-    # 9. TRIGGER NEXT RUN
+    # 9. TRIGGER NEXT
     # ==========================================
-    - name: Trigger Next Run
+    - name: Trigger Next
       run: |
         $version = "${{ github.event.inputs.version }}"
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-ultimate.yml/dispatches \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-tailscale.yml/dispatches \
           -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
