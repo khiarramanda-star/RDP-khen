@@ -1,4 +1,4 @@
-name: KHEN RDP
+name: KHEN RDP ULTIMATE
 on:
   workflow_dispatch:
     inputs:
@@ -235,12 +235,12 @@ jobs:
       # ==========================================
       # 7. TAILSCALE VPN
       # ==========================================
-      - name: Tailscale VPN
+      - name: Install Tailscale
         env:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
           Write-Host "========================================"
-          Write-Host "  TAILSCALE VPN"
+          Write-Host "  INSTALL TAILSCALE"
           Write-Host "========================================"
           
           if (-not $env:TAILSCALE_AUTH_KEY) {
@@ -249,14 +249,29 @@ jobs:
             exit 1
           }
           
-          winget install -e --id Tailscale.Tailscale --silent --accept-package-agreements
-          Start-Sleep -Seconds 15
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+          $installer = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i `"$installer`" /quiet /norestart /qn" -Wait
+          Remove-Item $installer -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 10
           
           $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
           if (-not (Test-Path $tsPath)) {
-            $tsPath = "C:\Users\runneradmin\AppData\Local\Microsoft\WindowsApps\tailscale.exe"
+            Write-Host "ERROR: Tailscale not installed"
+            exit 1
           }
+          Write-Host "✅ Tailscale installed"
+
+      - name: Login Tailscale
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          Write-Host "========================================"
+          Write-Host "  LOGIN TAILSCALE"
+          Write-Host "========================================"
           
+          $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
           & $tsPath login --auth-key $env:TAILSCALE_AUTH_KEY
           Start-Sleep -Seconds 5
           
