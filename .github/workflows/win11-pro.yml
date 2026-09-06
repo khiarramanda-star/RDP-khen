@@ -50,7 +50,7 @@ jobs:
         Write-Host "✅ Cleanup done"
     
     # ==========================================
-    # 2. RESTORE DATA
+    # 2. RESTORE DATA (CACHE)
     # ==========================================
     - name: Restore Cache
       uses: actions/cache@v4
@@ -103,7 +103,7 @@ jobs:
         net localgroup Administrators ${{ env.RDP_USER }} /add 2>$null
         net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add 2>$null
         
-        # Setup folder
+        # Setup folder data
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -111,10 +111,11 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
         
         # Redirect user folders
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        @('Desktop','Documents','Downloads','Pictures','Music','Videos') | ForEach-Object {
+        @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects') | ForEach-Object {
           $target = "${{ env.DATA_PATH }}\$_"
           if (!(Test-Path "$userPath\$_")) {
             cmd /c mklink /J "$userPath\$_" "$target" 2>$null
@@ -145,7 +146,7 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 5. CLOUDFLARE TUNNEL (FIXED)
+    # 5. CLOUDFLARE TUNNEL
     # ==========================================
     - name: Cloudflare Tunnel
       env:
@@ -170,7 +171,7 @@ jobs:
         Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
     
     # ==========================================
-    # 6. TAILSCALE VPN (FIXED)
+    # 6. TAILSCALE VPN
     # ==========================================
     - name: Tailscale VPN
       env:
@@ -228,9 +229,9 @@ jobs:
         }
     
     # ==========================================
-    # 8. BACKUP
+    # 8. BACKUP KE ARTIFACT
     # ==========================================
-    - name: Upload Backup
+    - name: Upload Backup ke Artifact
       uses: actions/upload-artifact@v4
       with:
         name: khen-data-backup
@@ -238,7 +239,7 @@ jobs:
         retention-days: 90
     
     # ==========================================
-    # 9. TRIGGER NEXT
+    # 9. TRIGGER NEXT RUN
     # ==========================================
     - name: Trigger Next Run
       run: |
@@ -246,6 +247,6 @@ jobs:
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/windows.yml/dispatches \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches \
           -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
