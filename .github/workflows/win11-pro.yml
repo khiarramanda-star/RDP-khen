@@ -74,9 +74,9 @@ jobs:
         netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
         netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
         
-        net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no 2>$null
-        net localgroup Administrators ${{ env.RDP_USER }} /add 2>$null
-        net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add 2>$null
+        net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
+        net localgroup Administrators ${{ env.RDP_USER }} /add
+        net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
         
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
@@ -91,12 +91,13 @@ jobs:
         $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects')
         foreach ($folder in $folders) {
           $target = "${{ env.DATA_PATH }}\$folder"
-          if (!(Test-Path "$userPath\$folder")) {
-            cmd /c mklink /J "$userPath\$folder" "$target" 2>$null
+          if (Test-Path "$userPath\$folder") {
+            Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue
           }
+          cmd /c mklink /J "$userPath\$folder" "$target"
         }
         
-        @"
+        $config = @"
         ╔═══════════════════════════════════════════╗
         ║       KHEN RDP ULTIMATE                  ║
         ╠═══════════════════════════════════════════╣
@@ -105,7 +106,8 @@ jobs:
         ║ DATA   : ${{ env.DATA_PATH }}            ║
         ║ STATUS : ONLINE                          ║
         ╚═══════════════════════════════════════════╝
-        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
+        "@
+        $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
         Write-Host ""
         Write-Host "========================================"
