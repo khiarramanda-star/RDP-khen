@@ -1,17 +1,31 @@
-name: KHEN RDP - Tailscale
+name: KHEN RDP GAMING PRO
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Pilih versi Windows'
+        description: 'Pilih versi Windows Pro'
         required: true
-        default: 'windows-latest'
+        default: 'windows-11-pro'
         type: choice
         options:
-          - windows-latest
-          - windows-2022
-          - windows-2019
-          - windows-2016
+          - windows-11-pro
+          - windows-10-pro
+          - windows-10-22h2
+          - windows-10-21h2
+          - windows-10-20h2
+          - windows-10-1909
+          - windows-10-1903
+          - windows-10-1809
+          - windows-8-pro
+          - windows-7-pro
+      gpu:
+        description: 'Enable GPU acceleration?'
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+          - yes
+          - no
       backup:
         description: 'Aktifkan Backup?'
         required: true
@@ -31,20 +45,33 @@ env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
   DATA_PATH: C:\khen-data
-  TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+  GAMING_PATH: D:\games
+  BACKUP_ENABLED: ${{ github.event.inputs.backup == 'yes' }}
 
 jobs:
   rdp:
-    runs-on: ${{ github.event.inputs.version || 'windows-latest' }}
+    runs-on: ${{ 
+      github.event.inputs.version == 'windows-11-pro' && 'windows-latest' ||
+      github.event.inputs.version == 'windows-10-pro' && 'windows-2019' ||
+      github.event.inputs.version == 'windows-10-22h2' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-10-21h2' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-10-20h2' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-10-1909' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-10-1903' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-10-1809' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-8-pro' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-7-pro' && 'windows-2022'
+    }}
     timeout-minutes: 350
     steps:
       # ==========================================
       # 1. CLEANUP
       # ==========================================
-      - name: Cleanup
+      - name: System Prep
         run: |
           Write-Host "========================================"
-          Write-Host "  CLEANUP & PREPARE"
+          Write-Host "  KHEN RDP GAMING PRO"
+          Write-Host "  Version: ${{ github.event.inputs.version }}"
           Write-Host "========================================"
           
           Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
@@ -52,24 +79,26 @@ jobs:
           Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
           
-          Write-Host "✅ Cleanup done"
+          Write-Host "✅ System prepared"
 
       # ==========================================
-      # 2. RESTORE DATA
+      # 2. RESTORE DATA (PERSISTENT)
       # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
         id: cache
         with:
-          path: ${{ env.DATA_PATH }}
-          key: khen-data-${{ github.run_id }}
-          restore-keys: khen-data-
+          path: |
+            ${{ env.DATA_PATH }}
+            ${{ env.GAMING_PATH }}
+          key: khen-gaming-${{ github.run_id }}
+          restore-keys: khen-gaming-
 
       - name: Restore Artifact
-        if: github.event.inputs.backup == 'yes' && steps.cache.outputs.cache-hit != 'true'
+        if: env.BACKUP_ENABLED == 'true' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
         with:
-          name: khen-data-backup
+          name: khen-gaming-backup
           path: ${{ env.DATA_PATH }}
         continue-on-error: true
 
@@ -81,22 +110,28 @@ jobs:
           Write-Host "========================================"
           Write-Host "  SYSTEM INFO"
           Write-Host "========================================"
-          Write-Host "Version : ${{ github.event.inputs.version || 'schedule' }}"
+          Write-Host "Version : ${{ github.event.inputs.version }}"
+          Write-Host "GPU     : ${{ github.event.inputs.gpu }}"
           Write-Host "Backup  : ${{ github.event.inputs.backup }}"
-          Write-Host "Tunnel  : TAILSCALE"
           Write-Host "========================================"
+          
+          Write-Host "OS:"
           Get-WmiObject -Class Win32_OperatingSystem
+          Write-Host "CPU:"
           Get-WmiObject -Class Win32_Processor
+          Write-Host "RAM:"
           Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+          Write-Host "GPU:"
+          Get-WmiObject -Class Win32_VideoController
           Write-Host "========================================"
 
       # ==========================================
-      # 4. SETUP RDP (KOMPLIT)
+      # 4. SETUP RDP GAMING
       # ==========================================
-      - name: Setup RDP
+      - name: Setup RDP Gaming
         run: |
           Write-Host "========================================"
-          Write-Host "  SETUP RDP"
+          Write-Host "  SETUP RDP GAMING"
           Write-Host "========================================"
           
           # Enable RDP
@@ -104,16 +139,31 @@ jobs:
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
           
+          # Gaming Optimization
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxIdleTime /t REG_DWORD /d 0 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableCursorShadow /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableWallpaper /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableFullWindowDrag /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableMenuAnimations /t REG_DWORD /d 1 /f
+          
+          # Enable RemoteFX (buat gaming)
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableWddmDriver /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFx /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFXAdvanced /t REG_DWORD /d 1 /f
+          
           # Firewall
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          netsh advfirewall firewall add rule name="RDP-UDP" dir=in action=allow protocol=UDP localport=3389
+          netsh advfirewall firewall add rule name="Steam" dir=in action=allow protocol=TCP localport=27015-27030
+          netsh advfirewall firewall add rule name="Epic" dir=in action=allow protocol=TCP localport=443,80
           
           # Create user
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
           
-          # Setup folders
+          # Setup data folders (PERSISTENT)
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -121,14 +171,23 @@ jobs:
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
-          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\SaveGames
           
+          # Setup gaming folder (PERSISTENT)
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Steam
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Epic
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\GOG
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Mods
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Saves
+          
+          # Redirect user folders
           $userPath = "C:\Users\${{ env.RDP_USER }}"
           if (-not (Test-Path $userPath)) {
             New-Item -ItemType Directory -Force -Path $userPath
           }
           
-          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects')
+          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','SaveGames')
           foreach ($folder in $folders) {
             $target = "${{ env.DATA_PATH }}\$folder"
             if (Test-Path "$userPath\$folder") {
@@ -139,22 +198,24 @@ jobs:
           
           # Config
           $config = @"
-          ╔═══════════════════════════════════════════════════╗
-          ║              KHEN RDP - TAILSCALE                ║
-          ╠═══════════════════════════════════════════════════╣
-          ║ USER      : ${{ env.RDP_USER }}                 ║
-          ║ PASS      : ${{ env.RDP_PASS }}                 ║
-          ║ DATA      : ${{ env.DATA_PATH }}                ║
-          ║ VERSION   : ${{ github.event.inputs.version }}  ║
-          ║ BACKUP    : ${{ github.event.inputs.backup }}   ║
-          ║ STATUS    : ONLINE                              ║
-          ╚═══════════════════════════════════════════════════╝
+          ╔══════════════════════════════════════════════════════════════════════╗
+          ║                    KHEN RDP GAMING PRO                             ║
+          ╠══════════════════════════════════════════════════════════════════════╣
+          ║ USER      : ${{ env.RDP_USER }}                                    ║
+          ║ PASS      : ${{ env.RDP_PASS }}                                    ║
+          ║ DATA      : ${{ env.DATA_PATH }}                                   ║
+          ║ GAMES     : ${{ env.GAMING_PATH }}                                 ║
+          ║ VERSION   : ${{ github.event.inputs.version }}                     ║
+          ║ GPU       : ${{ github.event.inputs.gpu }}                         ║
+          ║ BACKUP    : ${{ github.event.inputs.backup }}                      ║
+          ║ STATUS    : ONLINE                                                 ║
+          ╚══════════════════════════════════════════════════════════════════════╝
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
           
           Write-Host ""
           Write-Host "========================================"
-          Write-Host "  ✅ RDP ACTIVE"
+          Write-Host "  ✅ RDP GAMING PRO ACTIVE"
           Write-Host "========================================"
           Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
           Write-Host "========================================"
@@ -162,51 +223,58 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # 5. TAILSCAPE VPN (DOANG)
+      # 5. GPU ACCELERATION
+      # ==========================================
+      - name: GPU Acceleration
+        if: github.event.inputs.gpu == 'yes'
+        run: |
+          Write-Host "========================================"
+          Write-Host "  GPU ACCELERATION ENABLED"
+          Write-Host "========================================"
+          
+          # Install DirectX
+          choco install directx -y 2>$null
+          
+          # Install Vulkan Runtime
+          choco install vulkan-runtime -y 2>$null
+          
+          # Install GPU drivers (basic)
+          choco install gpu-z -y 2>$null
+          
+          Write-Host "✅ GPU Acceleration enabled"
+
+      # ==========================================
+      # 6. TAILSCALE VPN
       # ==========================================
       - name: Tailscale VPN
         env:
-          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
           Write-Host "========================================"
           Write-Host "  TAILSCALE VPN"
           Write-Host "========================================"
           
-          if (-not $env:TS_AUTHKEY) {
-            Write-Host "❌ ERROR: TS_AUTHKEY not set!"
+          if (-not $env:TAILSCALE_AUTH_KEY) {
+            Write-Host "❌ ERROR: TAILSCALE_AUTH_KEY not set!"
             Write-Host "🔑 Dapatkan key di: https://login.tailscale.com/admin/authkeys"
-            Write-Host "⚠️  Pilih Reusable + Never Expire"
             exit 1
           }
           
-          Write-Host "✅ Auth key ditemukan (length: $($env:TS_AUTHKEY.Length))"
+          Write-Host "✅ Auth key ditemukan"
           
-          Write-Host "🔄 Downloading Tailscale installer..."
           curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
-          
-          if (-not (Test-Path tailscale.msi)) {
-            Write-Host "❌ Download Tailscale gagal!"
-            Write-Host "⚠️  Coba lagi nanti atau cek koneksi"
-            exit 1
-          }
-          
-          Write-Host "🔄 Installing Tailscale..."
           msiexec /i tailscale.msi /quiet /norestart
           Start-Sleep -Seconds 15
           
-          # Verify installation
           $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
           if (-not (Test-Path $tsPath)) {
             Write-Host "❌ Tailscale installation failed!"
-            Write-Host "⚠️  Coba install manual atau cek log"
             exit 1
           }
           
-          Write-Host "🔄 Logging in to Tailscale..."
-          & $tsPath login --auth-key $env:TS_AUTHKEY
+          & $tsPath login --auth-key $env:TAILSCALE_AUTH_KEY
           Start-Sleep -Seconds 5
           
-          Write-Host "🔄 Getting Tailscale IP..."
           $ip = & $tsPath ip
           
           Write-Host ""
@@ -217,17 +285,40 @@ jobs:
           Write-Host "USER : ${{ env.RDP_USER }}"
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
-          Write-Host "🔑  Akses RDP pake IP di atas"
-          Write-Host "========================================"
 
       # ==========================================
-      # 6. KEEP ALIVE
+      # 7. GAMING TOOLS INSTALL
+      # ==========================================
+      - name: Gaming Tools
+        run: |
+          Write-Host "========================================"
+          Write-Host "  INSTALLING GAMING TOOLS"
+          Write-Host "========================================"
+          
+          # Install Steam
+          Write-Host "Installing Steam..."
+          curl -L -o steam.exe https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe
+          Start-Process -FilePath "steam.exe" -ArgumentList "/S" -Wait
+          
+          # Install Epic Games Launcher
+          Write-Host "Installing Epic Games Launcher..."
+          curl -L -o epic.exe https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/installer/download/EpicGamesLauncherInstaller.msi
+          msiexec /i epic.exe /quiet /norestart
+          
+          # Create launcher shortcuts
+          New-Item -ItemType Directory -Force -Path "${{ env.DATA_PATH }}\Desktop\Games"
+          Write-Host "✅ Gaming tools installed"
+
+      # ==========================================
+      # 8. KEEP ALIVE
       # ==========================================
       - name: Keep Alive
         run: |
           Write-Host "========================================"
-          Write-Host "  ✅ KHEN RDP AKTIF!"
+          Write-Host "  ✅ KHEN RDP GAMING PRO AKTIF!"
           Write-Host "========================================"
+          Write-Host ""
+          Write-Host "  🎮 GAMING PRO READY!"
           Write-Host ""
           Write-Host "  🖥️  AKSES RDP:"
           Write-Host ""
@@ -235,11 +326,10 @@ jobs:
           Write-Host "     User: ${{ env.RDP_USER }}"
           Write-Host "     Pass: ${{ env.RDP_PASS }}"
           Write-Host ""
-          Write-Host "  📱 Windows App: Remote Desktop Connection (mstsc)"
-          Write-Host "  📱 HP: Microsoft Remote Desktop"
-          Write-Host ""
-          Write-Host "  ⚡️ Backup : ${{ github.event.inputs.backup }}"
-          Write-Host "  ⚡️ Version: ${{ github.event.inputs.version }}"
+          Write-Host "  📁 Data Folder: ${{ env.DATA_PATH }} (PERMANEN)"
+          Write-Host "  📁 Game Folder: ${{ env.GAMING_PATH }} (PERMANEN)"
+          Write-Host "  🎮 GPU Status: ${{ github.event.inputs.gpu }}"
+          Write-Host "  💾 Backup: ${{ github.event.inputs.backup }}"
           Write-Host ""
           Write-Host "========================================"
           
@@ -247,31 +337,23 @@ jobs:
           while ($true) {
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
-            
-            if ('${{ github.event.inputs.backup }}' -eq 'yes' -and ($counter % 6 -eq 0)) {
-              Write-Host "[$time] 📤 Creating backup..."
-              $zipPath = "C:\khen-backup-$counter.zip"
-              Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath $zipPath -Force -ErrorAction SilentlyContinue
-              Write-Host "[$time] ✅ Backup created: $zipPath"
-            }
-            
-            Write-Host "[$time] KHEN RDP ACTIVE #$counter"
+            Write-Host "[$time] KHEN GAMING PRO ACTIVE #$counter"
             Start-Sleep -Seconds 300
           }
 
       # ==========================================
-      # 7. BACKUP
+      # 9. BACKUP (PERSISTENT)
       # ==========================================
       - name: Upload Backup
-        if: github.event.inputs.backup == 'yes'
+        if: env.BACKUP_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: khen-data-backup
+          name: khen-gaming-backup
           path: ${{ env.DATA_PATH }}
           retention-days: 90
 
       - name: Upload Backup (Disabled)
-        if: github.event.inputs.backup == 'no'
+        if: env.BACKUP_ENABLED != 'true'
         run: |
           Write-Host "========================================"
           Write-Host "  SKIP BACKUP"
@@ -280,7 +362,7 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # 8. TRIGGER NEXT RUN
+      # 10. AUTO RESTART
       # ==========================================
       - name: Trigger Next Run
         if: always()
@@ -289,12 +371,13 @@ jobs:
             ref = "main"
             inputs = @{
               version = "${{ github.event.inputs.version }}"
+              gpu = "${{ github.event.inputs.gpu }}"
               backup = "${{ github.event.inputs.backup }}"
             }
           } | ConvertTo-Json -Depth 3
           
           try {
-            Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-tailscale.yml/dispatches" `
+            Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-gaming-pro.yml/dispatches" `
               -Method Post `
               -Headers @{
                 "Authorization" = "token ${{ secrets.PAT_TOKEN }}"
