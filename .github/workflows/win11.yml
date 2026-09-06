@@ -1,0 +1,91 @@
+name: RDP Windows 11 Pro
+on:
+  schedule:
+    - cron: '0 */5 * * *'
+  workflow_dispatch:
+
+env:
+  RDP_USER: KhenzOfficial
+  RDP_PASS: KhenzDev#12
+  RDP_DOMAIN: rdp.xzen.my.id
+
+jobs:
+  win11:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    
+    steps:
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker.io qemu-kvm qemu-utils qemu-system-x86 \
+          libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+        
+        # Enable KVM
+        sudo modprobe kvm
+        sudo modprobe kvm_intel
+        sudo chmod 666 /dev/kvm
+    
+    - name: Run Windows 11 Pro
+      run: |
+        # Pull Docker image Windows 11
+        docker run -d --name win11 \
+          --privileged \
+          -e VERSION=win11pro \
+          -e USERNAME=${{ env.RDP_USER }} \
+          -e PASSWORD=${{ env.RDP_PASS }} \
+          -e RAM_SIZE=8G \
+          -e CPU_CORES=4 \
+          -e DISK_SIZE=64G \
+          -e BOOT_MODE=uefi \
+          -e LANGUAGE=English \
+          -e KEYBOARD=en-US \
+          -p 3389:3389 \
+          -p 8006:8006 \
+          dockurr/windows:latest
+        
+        # Wait for Windows to boot (3-5 menit)
+        echo "Waiting for Windows 11 to boot..."
+        sleep 180
+        
+        # Check status
+        docker logs win11 --tail 30
+        
+        Write-Host "========================================"
+        Write-Host "  WINDOWS 11 PRO ACTIVE"
+        Write-Host "========================================"
+        Write-Host "HOST   : ${{ env.RDP_DOMAIN }}"
+        Write-Host "USER   : ${{ env.RDP_USER }}"
+        Write-Host "PASS   : ${{ env.RDP_PASS }}"
+        Write-Host "========================================"
+    
+    - name: Setup Cloudflare Tunnel
+      env:
+        CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+      run: |
+        curl -s -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+        chmod +x cloudflared
+        
+        # Login tunnel
+        echo $CF_TOKEN | ./cloudflared tunnel login
+        
+        # Create tunnel
+        ./cloudflared tunnel create win11-rdp 2>/dev/null
+        ./cloudflared tunnel route dns win11-rdp ${{ env.RDP_DOMAIN }} 2>/dev/null
+        
+        # Run tunnel
+        ./cloudflared tunnel run --url tcp://localhost:3389 win11-rdp &
+        
+        Write-Host "Tunnel running at ${{ env.RDP_DOMAIN }}"
+    
+    - name: Keep Alive
+      run: |
+        echo "Windows 11 Pro is running..."
+        echo "Akses: rdp.xzen.my.id"
+        echo "User: KhenzOfficial"
+        echo "Pass: KhenzDev#12"
+        
+        while true; do
+          echo "$(date) - Windows 11 Pro Active"
+          sleep 300
+        done
