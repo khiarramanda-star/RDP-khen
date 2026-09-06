@@ -199,7 +199,6 @@ jobs:
           choco install directx -y 2>$null
           choco install vcredist-all -y 2>$null
           choco install vulkan-runtime -y 2>$null
-          Write-Host "Installing Steam..."
           curl -L -o steam.exe https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe
           Start-Process -FilePath "steam.exe" -ArgumentList "/S" -Wait
           Write-Host "✅ Gaming tools installed"
@@ -228,7 +227,10 @@ jobs:
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
 
-      - name: Keep Alive
+      # ==========================================
+      # KEEP ALIVE + AUTO CHECK (GABUNGAN)
+      # ==========================================
+      - name: Keep Alive & Auto Check
         run: |
           Write-Host "========================================"
           Write-Host "  RYZEN GAMING ULTIMATE AKTIF"
@@ -254,53 +256,35 @@ jobs:
           Write-Host "  ⏰ 4 jam tersisa..."
           Write-Host ""
           Write-Host "========================================"
+          
           $counter = 0
           while ($counter -lt 48) {
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
+            
+            # Status utama
             Write-Host "[$time] RYZEN GAMING ACTIVE $counter"
-            Start-Sleep -Seconds 300
-          }
-
-      # ==========================================
-      # AUTO CHECK (TANPA REMOVE!)
-      # ==========================================
-      - name: Auto Check & Backup
-        run: |
-          Write-Host "========================================"
-          Write-Host "  AUTO CHECK (10 menit sekali)"
-          Write-Host "========================================"
-          
-          $checkCounter = 0
-          while ($true) {
-            $checkCounter++
-            $time = Get-Date -Format "HH:mm:ss"
             
-            # Cek resource
-            $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
-            $ram = Get-WmiObject -Class Win32_OperatingSystem
-            $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
-            $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
-            
-            # Cek disk
-            $disk = Get-PSDrive C
-            $diskFree = [math]::Round($disk.Free / 1GB, 2)
-            $diskUsed = [math]::Round($disk.Used / 1GB, 2)
-            
-            Write-Host "[$time] AUTO CHECK #$checkCounter"
-            Write-Host "  CPU Load  : $cpu%"
-            Write-Host "  RAM Used  : $ramUsed / $ramTotal GB"
-            Write-Host "  Disk Free : $diskFree GB"
-            Write-Host "  Disk Used : $diskUsed GB"
-            
-            # Backup tiap 30 menit (tanpa remove!)
-            if ($checkCounter % 3 -eq 0) {
-              Write-Host "  📤 Auto Backup..."
-              Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\auto-backup-$checkCounter.zip -Force -ErrorAction SilentlyContinue
-              Write-Host "  ✅ Backup saved: C:\auto-backup-$checkCounter.zip"
+            # Auto check tiap 3 loop (15 menit)
+            if ($counter % 3 -eq 0) {
+              $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
+              $ram = Get-WmiObject -Class Win32_OperatingSystem
+              $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
+              $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
+              $disk = Get-PSDrive C
+              $diskFree = [math]::Round($disk.Free / 1GB, 2)
+              
+              Write-Host "[$time] AUTO CHECK: CPU=$cpu% | RAM=$ramUsed/$ramTotal GB | DISK=$diskFree GB free"
+              
+              # Backup tiap 6 loop (30 menit) — tanpa remove!
+              if ($counter % 6 -eq 0) {
+                Write-Host "[$time] 📤 Auto Backup..."
+                Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\auto-backup-$counter.zip -Force -ErrorAction SilentlyContinue
+                Write-Host "[$time] ✅ Backup saved: C:\auto-backup-$counter.zip"
+              }
             }
             
-            Start-Sleep -Seconds 600  # 10 menit
+            Start-Sleep -Seconds 300  # 5 menit
           }
 
       - name: Upload Backup
