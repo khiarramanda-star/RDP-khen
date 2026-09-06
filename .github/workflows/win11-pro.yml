@@ -1,9 +1,9 @@
-name: GAMING ULTIMATE
+name: KHEN GAMING ULTIMATE
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Pilih Windows'
+        description: 'Pilih versi Windows Pro'
         required: true
         default: 'windows-11-pro'
         type: choice
@@ -11,21 +11,11 @@ on:
           - windows-11-pro
           - windows-10-pro
           - windows-10-22h2
-      game_profile:
-        description: 'Pilih profil game (buat tuning)'
-        required: true
-        default: 'gta5'
-        type: choice
-        options:
-          - gta5
-          - cyberpunk
-          - rdr2
-          - forza5
-          - generic
+          - windows-10-21h2
       backup:
         description: 'Aktifkan Backup?'
         required: true
-        default: 'yes'
+        default: 'no'
         type: choice
         options:
           - yes
@@ -45,61 +35,90 @@ env:
 
 jobs:
   rdp:
-    runs-on: windows-latest
+    runs-on: ${{ 
+      github.event.inputs.version == 'windows-11-pro' && 'windows-latest' ||
+      github.event.inputs.version == 'windows-10-pro' && 'windows-2019' ||
+      github.event.inputs.version == 'windows-10-22h2' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-10-21h2' && 'windows-2022'
+    }}
     timeout-minutes: 350
     steps:
-      # ===========================================
-      # 1. ANTI-LAG + GAME PROFILE
-      # ===========================================
-      - name: Optimasi Gaming
+      # ==========================================
+      # 1. ANTI-LAG OPTIMIZATION
+      # ==========================================
+      - name: Anti-Lag Optimization
         run: |
-          Write-Host "=============================="
-          Write-Host "  GAMING ULTIMATE"
-          Write-Host "=============================="
-          Write-Host "Game : ${{ github.event.inputs.game_profile }}"
-          Write-Host "=============================="
-
+          Write-Host "========================================"
+          Write-Host "  GAMING ULTIMATE - TAILSCALE"
+          Write-Host "  Version: ${{ github.event.inputs.version }}"
+          Write-Host "========================================"
+          
+          # High Performance Power Plan
           powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+          
+          # Game Mode ON
           reg add "HKCU\Software\Microsoft\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f
+          reg add "HKCU\Software\Microsoft\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f
+          
+          # GPU Hardware Scheduling
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f
+          
+          # Disable Visual Effects
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f
           reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f
+          reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 0 /f
+          
+          # Disable Animations & Transparency
+          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f
+          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f
+          
+          # Disable Background Apps
+          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
+          
+          Write-Host "Anti-Lag Optimization Applied"
+          Write-Host "========================================"
 
-          # Tuning per game
-          if ("${{ github.event.inputs.game_profile }}" -eq "gta5") {
-            reg add "HKCU\Software\Rockstar Games\Grand Theft Auto V" /v "DX12 Enabled" /t REG_DWORD /d 0 /f
-            reg add "HKCU\Software\Rockstar Games\Grand Theft Auto V" /v "IgnoreSuggestedLimits" /t REG_DWORD /d 1 /f
-          } elseif ("${{ github.event.inputs.game_profile }}" -eq "cyberpunk") {
-            reg add "HKCU\Software\CD Projekt Red\Cyberpunk 2077" /v "DX12Enabled" /t REG_DWORD /d 1 /f
-          } elseif ("${{ github.event.inputs.game_profile }}" -eq "rdr2") {
-            reg add "HKCU\Software\Rockstar Games\Red Dead Redemption 2" /v "DX12Enabled" /t REG_DWORD /d 1 /f
-          } elseif ("${{ github.event.inputs.game_profile }}" -eq "forza5") {
-            reg add "HKCU\Software\Playground Games\Forza Horizon 5" /v "VRSEnabled" /t REG_DWORD /d 1 /f
-          }
-          Write-Host "Optimasi selesai"
-
-      # ===========================================
-      # 2. FREE RAM + VIRTUAL MEMORY
-      # ===========================================
-      - name: RAM & Pagefile
+      # ==========================================
+      # 2. FREE RAM & VIRTUAL MEMORY
+      # ==========================================
+      - name: Free RAM & Virtual Memory
         run: |
+          Write-Host "========================================"
+          Write-Host "  FREE RAM & VIRTUAL MEMORY"
+          Write-Host "========================================"
+          
+          # Stop unused services
+          Stop-Service -Name SysMain -Force -ErrorAction SilentlyContinue
+          Stop-Service -Name WSearch -Force -ErrorAction SilentlyContinue
+          Stop-Service -Name XboxNetApiSvc -Force -ErrorAction SilentlyContinue
+          Stop-Service -Name DiagTrack -Force -ErrorAction SilentlyContinue
+          
+          # Clear caches
+          Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+          [System.GC]::Collect()
+          
+          # Remove temp files
           Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
           
+          # Set Pagefile to 32GB
           $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
           $computerSystem.AutomaticManagedPagefile = $false
           $computerSystem.Put()
+          
           $pagefile = Get-WmiObject -Class Win32_PageFileSetting
           $pagefile.InitialSize = 32768
           $pagefile.MaximumSize = 32768
           $pagefile.Put()
-          Write-Host "Pagefile 32GB siap"
+          
+          Write-Host "RAM & Virtual Memory Ready (32GB Pagefile)"
+          Write-Host "========================================"
 
-      # ===========================================
+      # ==========================================
       # 3. RESTORE DATA
-      # ===========================================
+      # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
         id: cache
@@ -118,104 +137,229 @@ jobs:
           path: ${{ env.DATA_PATH }}
         continue-on-error: true
 
-      # ===========================================
+      # ==========================================
       # 4. SYSTEM INFO
-      # ===========================================
+      # ==========================================
       - name: System Info
         run: |
+          Write-Host "========================================"
+          Write-Host "  SYSTEM INFO"
+          Write-Host "========================================"
+          Write-Host "Version : ${{ github.event.inputs.version }}"
+          Write-Host "Backup  : ${{ github.event.inputs.backup }}"
+          Write-Host "========================================"
+          Get-WmiObject -Class Win32_OperatingSystem
           Get-WmiObject -Class Win32_Processor
           Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
           Get-WmiObject -Class Win32_VideoController
+          Write-Host "========================================"
 
-      # ===========================================
-      # 5. SETUP RDP
-      # ===========================================
-      - name: Setup RDP
+      # ==========================================
+      # 5. SETUP RDP GAMING
+      # ==========================================
+      - name: Setup RDP Gaming
         run: |
+          Write-Host "========================================"
+          Write-Host "  SETUP RDP GAMING"
+          Write-Host "========================================"
+          
+          # Enable RDP
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
+          
+          # Gaming Optimization
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxIdleTime /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableCursorShadow /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableWallpaper /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableFullWindowDrag /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableMenuAnimations /t REG_DWORD /d 1 /f
+          
+          # Enable RemoteFX
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableWddmDriver /t REG_DWORD /d 1 /f
-
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFx /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFXAdvanced /t REG_DWORD /d 1 /f
+          
+          # Firewall
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          netsh advfirewall firewall add rule name="RDP-UDP" dir=in action=allow protocol=UDP localport=3389
           netsh advfirewall firewall add rule name="Steam" dir=in action=allow protocol=TCP localport=27015-27030
-
+          netsh advfirewall firewall add rule name="Game" dir=in action=allow protocol=TCP localport=27000-27050
+          
+          # Create user
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
-
+          
+          # Setup folders
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Downloads
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\SaveGames
+          
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Steam
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Epic
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\GOG
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Rockstar
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\CDProjektRed
-          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Forza
-
+          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Minecraft
+          
+          # Redirect user folders
           $userPath = "C:\Users\${{ env.RDP_USER }}"
-          if (-not (Test-Path $userPath)) { New-Item -ItemType Directory -Force -Path $userPath }
-          @('Desktop','Documents','Downloads','SaveGames') | ForEach-Object {
-            $target = "${{ env.DATA_PATH }}\$_"
-            if (Test-Path "$userPath\$_") { Remove-Item -Path "$userPath\$_" -Force -ErrorAction SilentlyContinue }
-            cmd /c mklink /J "$userPath\$_" "$target"
+          if (-not (Test-Path $userPath)) {
+            New-Item -ItemType Directory -Force -Path $userPath
           }
+          
+          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','SaveGames')
+          foreach ($folder in $folders) {
+            $target = "${{ env.DATA_PATH }}\$folder"
+            if (Test-Path "$userPath\$folder") {
+              Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue
+            }
+            cmd /c mklink /J "$userPath\$folder" "$target"
+          }
+          
+          # Config
+          $config = @"
+          ============================================================
+          KHEN GAMING ULTIMATE - TAILSCALE
+          ============================================================
+          USER      : ${{ env.RDP_USER }}
+          PASS      : ${{ env.RDP_PASS }}
+          DATA      : ${{ env.DATA_PATH }}
+          GAMES     : ${{ env.GAMING_PATH }}
+          VERSION   : ${{ github.event.inputs.version }}
+          BACKUP    : ${{ github.event.inputs.backup }}
+          STATUS    : ONLINE
+          ============================================================
+          "@
+          $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
+          
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "  RDP GAMING ACTIVE"
+          Write-Host "========================================"
+          Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
+          Write-Host "========================================"
+          Write-Host "DATA AMAN. Tidak hilang walau restart"
+          Write-Host "========================================"
 
-          Write-Host "RDP Gaming siap"
-          Write-Host "User: ${{ env.RDP_USER }}"
-          Write-Host "Pass: ${{ env.RDP_PASS }}"
-
-      # ===========================================
-      # 6. DRIVERS & TOOLS
-      # ===========================================
-      - name: Install Tools
+      # ==========================================
+      # 6. GAMING TOOLS (Steam doang)
+      # ==========================================
+      - name: Install Gaming Tools
         run: |
-          choco install directx vulkan-runtime vcredist-all steam -y 2>$null
+          Write-Host "========================================"
+          Write-Host "  INSTALL GAMING TOOLS"
+          Write-Host "========================================"
+          
+          # GPU Drivers
+          choco install directx -y 2>$null
+          choco install vulkan-runtime -y 2>$null
+          choco install vcredist-all -y 2>$null
+          
+          # Java for Minecraft (manual download nanti)
+          choco install openjdk21 -y 2>$null
+          
+          # Steam
+          curl -L -o steam.exe https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe
+          Start-Process -FilePath "steam.exe" -ArgumentList "/S" -Wait
+          
+          Write-Host "Gaming tools installed"
+          Write-Host "Minecraft bisa download manual via browser"
+          Write-Host "========================================"
 
-      # ===========================================
-      # 7. TAILSCALE
-      # ===========================================
-      - name: Tailscale
+      # ==========================================
+      # 7. TAILSCALE VPN
+      # ==========================================
+      - name: Tailscale VPN
         env:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          if (-not $env:TAILSCALE_AUTH_KEY) { Write-Host "Error: No key"; exit 1 }
+          Write-Host "========================================"
+          Write-Host "  TAILSCALE VPN"
+          Write-Host "========================================"
+          
+          if (-not $env:TAILSCALE_AUTH_KEY) {
+            Write-Host "ERROR: TAILSCALE_AUTH_KEY not set"
+            Write-Host "Dapatkan key di: https://login.tailscale.com/admin/authkeys"
+            exit 1
+          }
+          
+          Write-Host "Auth key ditemukan"
+          
           curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
+          if (-not (Test-Path tailscale.msi)) {
+            Write-Host "Download Tailscale gagal"
+            exit 1
+          }
+          
           msiexec /i tailscale.msi /quiet /norestart
           Start-Sleep -Seconds 15
+          
           $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+          if (-not (Test-Path $tsPath)) {
+            Write-Host "Tailscale installation failed"
+            exit 1
+          }
+          
           & $tsPath login --auth-key $env:TAILSCALE_AUTH_KEY
           Start-Sleep -Seconds 5
+          
           $ip = & $tsPath ip
-          Write-Host "IP Tailscale: $ip"
+          
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "  TAILSCALE ACTIVE"
+          Write-Host "========================================"
+          Write-Host "IP   : $ip"
+          Write-Host "USER : ${{ env.RDP_USER }}"
+          Write-Host "PASS : ${{ env.RDP_PASS }}"
+          Write-Host "========================================"
 
-      # ===========================================
+      # ==========================================
       # 8. KEEP ALIVE
-      # ===========================================
+      # ==========================================
       - name: Keep Alive
         run: |
-          Write-Host "=============================="
-          Write-Host "  GAMING ULTIMATE AKTIF"
-          Write-Host "=============================="
-          Write-Host "Install game pake Steam/Epic/etc"
-          Write-Host "Data & save tetap di: ${{ env.DATA_PATH }}"
-          Write-Host "Game di: ${{ env.GAMING_PATH }}"
-          Write-Host "=============================="
+          Write-Host "========================================"
+          Write-Host "  KHEN GAMING ULTIMATE AKTIF"
+          Write-Host "========================================"
+          Write-Host ""
+          Write-Host "  AKSES RDP:"
+          Write-Host ""
+          Write-Host "     Host: (Tailscale IP dari log di atas)"
+          Write-Host "     User: ${{ env.RDP_USER }}"
+          Write-Host "     Pass: ${{ env.RDP_PASS }}"
+          Write-Host ""
+          Write-Host "  Game Folder: ${{ env.GAMING_PATH }} (PERMANEN)"
+          Write-Host "  Data Folder: ${{ env.DATA_PATH }} (PERMANEN)"
+          Write-Host ""
+          Write-Host "  DOWNLOAD GAME MANUAL:"
+          Write-Host "  - Buka browser di RDP"
+          Write-Host "  - Download Minecraft, GTA 5, atau game lain"
+          Write-Host "  - Install di D:\games"
+          Write-Host ""
+          Write-Host "========================================"
+          
+          $counter = 0
           while ($true) {
-            Write-Host "$(Get-Date -Format 'HH:mm:ss') - GAMING ACTIVE"
+            $counter++
+            $time = Get-Date -Format "HH:mm:ss"
+            Write-Host "[$time] KHEN GAMING ACTIVE $counter"
             Start-Sleep -Seconds 300
           }
 
-      # ===========================================
+      # ==========================================
       # 9. BACKUP
-      # ===========================================
-      - name: Backup
+      # ==========================================
+      - name: Upload Backup
         if: github.event.inputs.backup == 'yes'
         uses: actions/upload-artifact@v4
         with:
@@ -223,28 +367,40 @@ jobs:
           path: ${{ env.DATA_PATH }}
           retention-days: 90
 
-      - name: Backup Skipped
+      - name: Upload Backup (Disabled)
         if: github.event.inputs.backup != 'yes'
-        run: Write-Host "Backup skip"
+        run: |
+          Write-Host "========================================"
+          Write-Host "  SKIP BACKUP"
+          Write-Host "========================================"
+          Write-Host "BACKUP = ${{ github.event.inputs.backup }}"
+          Write-Host "========================================"
 
-      # ===========================================
+      # ==========================================
       # 10. AUTO RESTART
-      # ===========================================
-      - name: Trigger Next
+      # ==========================================
+      - name: Trigger Next Run
         if: always()
         run: |
           $body = @{
             ref = "main"
             inputs = @{
               version = "${{ github.event.inputs.version }}"
-              game_profile = "${{ github.event.inputs.game_profile }}"
               backup = "${{ github.event.inputs.backup }}"
             }
           } | ConvertTo-Json -Depth 3
+          
           try {
             Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/gaming-ultimate.yml/dispatches" `
               -Method Post `
-              -Headers @{ "Authorization" = "token ${{ secrets.PAT_TOKEN }}"; "Accept" = "application/vnd.github.v3+json" } `
+              -Headers @{
+                "Authorization" = "token ${{ secrets.PAT_TOKEN }}"
+                "Accept" = "application/vnd.github.v3+json"
+              } `
               -Body $body `
               -ContentType "application/json"
-          } catch {}
+            Write-Host "Next run triggered"
+          } catch {
+            Write-Host "Gagal trigger: $($_.Exception.Message)"
+          }
+        continue-on-error: true
