@@ -1,4 +1,4 @@
-name: KHEN RDP ULTIMATE
+name: KHEN RDP FINAL
 on:
   workflow_dispatch:
     inputs:
@@ -10,14 +10,6 @@ on:
         options:
           - pro-ryzen
           - arm-basic
-      storage:
-        description: 'Pake Google Drive? (butuh RCLONE_CONF secret)'
-        required: true
-        default: 'no'
-        type: choice
-        options:
-          - yes
-          - no
   schedule:
     - cron: '0 */5 * * *'
 
@@ -34,17 +26,16 @@ jobs:
     
     steps:
     # ==========================================
-    # 1. CLEANUP & PREPARE
+    # 1. PREPARE & CLEANUP
     # ==========================================
     - name: Prepare Environment
       run: |
         Write-Host "========================================"
-        Write-Host "  KHEN RDP ULTIMATE"
+        Write-Host "  KHEN RDP FINAL"
         Write-Host "  Version: ${{ github.event.inputs.version }}"
-        Write-Host "  Storage: ${{ github.event.inputs.storage }}"
         Write-Host "========================================"
         
-        # Bersihin sampah
+        # Bersihin disk
         Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
@@ -53,7 +44,7 @@ jobs:
         Write-Host "✅ Disk cleaned"
     
     # ==========================================
-    # 2. RESTORE DATA (CACHE) — FIRST RUN AMAN
+    # 2. RESTORE DATA (CACHE)
     # ==========================================
     - name: Restore dari Cache
       uses: actions/cache@v4
@@ -67,7 +58,7 @@ jobs:
     # ==========================================
     # 3. RESTORE DARI ARTIFACT (KALO ADA)
     # ==========================================
-    - name: Restore dari Artifact (kalo ada)
+    - name: Restore dari Artifact
       uses: actions/download-artifact@v4
       if: steps.cache.outputs.cache-hit != 'true'
       with:
@@ -76,28 +67,7 @@ jobs:
       continue-on-error: true
     
     # ==========================================
-    # 4. GOOGLE DRIVE (OPSIONAL)
-    # ==========================================
-    - name: Setup Rclone
-      if: github.event.inputs.storage == 'yes'
-      uses: AnimMouse/setup-rclone@v1
-      continue-on-error: true
-    
-    - name: Restore dari Google Drive (kalo ada)
-      if: github.event.inputs.storage == 'yes'
-      continue-on-error: true
-      run: |
-        $confPath = "C:\Users\runneradmin\AppData\Roaming\rclone\rclone.conf"
-        if (Test-Path $confPath) {
-          mkdir ${{ env.DATA_PATH }} -Force
-          rclone copy gdrive:khen-data ${{ env.DATA_PATH }} --verbose 2>&1
-          Write-Host "✅ Restore dari Google Drive berhasil"
-        } else {
-          Write-Host "⚠️ rclone.conf tidak ditemukan, skip Google Drive"
-        }
-    
-    # ==========================================
-    # 5. SYSTEM INFO
+    # 4. SYSTEM INFO
     # ==========================================
     - name: System Info
       run: |
@@ -127,7 +97,7 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 6. SETUP RDP
+    # 5. SETUP RDP
     # ==========================================
     - name: Setup RDP
       run: |
@@ -168,7 +138,7 @@ jobs:
         # Config
         @"
         ╔═══════════════════════════════════════════════════╗
-        ║              KHEN RDP ULTIMATE                   ║
+        ║              KHEN RDP FINAL                      ║
         ╠═══════════════════════════════════════════════════╣
         ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
         ║ USER      : ${{ env.RDP_USER }}                 ║
@@ -189,33 +159,37 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 7. CLOUDFLARE TUNNEL
+    # 6. CLOUDFLARE TUNNEL (FIXED)
     # ==========================================
     - name: Cloudflare Tunnel
       env:
         CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
       run: |
+        # Download cloudflared
         curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
         
-        # Login
+        # Login via token
         echo $env:CF_TOKEN | .\cloudflared.exe tunnel login 2>&1 | Out-Null
-        Write-Host "✅ Tunnel login berhasil"
+        Write-Host "✅ Login berhasil"
         
         # Hapus tunnel lama
-        .\cloudflared.exe tunnel delete khen-ultimate -f 2>&1 | Out-Null
+        .\cloudflared.exe tunnel delete khen-final -f 2>&1 | Out-Null
+        Write-Host "✅ Tunnel lama dihapus"
         
         # Buat tunnel baru
-        .\cloudflared.exe tunnel create khen-ultimate 2>&1 | Out-Null
+        .\cloudflared.exe tunnel create khen-final 2>&1 | Out-Null
+        Write-Host "✅ Tunnel dibuat"
         
         # Route ke domain
-        .\cloudflared.exe tunnel route dns khen-ultimate ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
+        .\cloudflared.exe tunnel route dns khen-final ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
+        Write-Host "✅ Route ke domain berhasil"
         
-        # Cari credentials
+        # Cari credential
         $credFile = Get-ChildItem C:\Users\runneradmin\.cloudflared\*.json | Select-Object -First 1
         
         # Config
         @"
-        tunnel: khen-ultimate
+        tunnel: khen-final
         credentials-file: $($credFile.FullName)
         ingress:
           - hostname: ${{ env.RDP_DOMAIN }}
@@ -223,23 +197,24 @@ jobs:
           - service: http_status:404
         "@ | Out-File C:\Users\runneradmin\.cloudflared\config.yml -Force
         
-        # Jalankan tunnel di background
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-ultimate" -WindowStyle Hidden -PassThru
+        # Jalankan tunnel
+        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-final" -WindowStyle Hidden -PassThru
         
         Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+        Write-Host "⚠️  Tunggu 1-2 menit, DNS Cloudflare perlu propagate"
     
     # ==========================================
-    # 8. KEEP ALIVE
+    # 7. KEEP ALIVE
     # ==========================================
     - name: Keep Alive
       run: |
         while ($true) {
-          Write-Host "$(Get-Date) - KHEN ULTIMATE ACTIVE"
+          Write-Host "$(Get-Date) - KHEN RDP FINAL ACTIVE"
           Start-Sleep -Seconds 300
         }
     
     # ==========================================
-    # 9. BACKUP
+    # 8. BACKUP
     # ==========================================
     - name: Upload Backup ke Artifact
       uses: actions/upload-artifact@v4
@@ -248,28 +223,15 @@ jobs:
         path: ${{ env.DATA_PATH }}
         retention-days: 90
     
-    - name: Upload Backup ke Google Drive
-      if: github.event.inputs.storage == 'yes'
-      continue-on-error: true
-      run: |
-        $confPath = "C:\Users\runneradmin\AppData\Roaming\rclone\rclone.conf"
-        if (Test-Path $confPath) {
-          rclone copy ${{ env.DATA_PATH }} gdrive:khen-data --verbose 2>&1
-          Write-Host "✅ Backup ke Google Drive berhasil"
-        } else {
-          Write-Host "⚠️ rclone.conf tidak ditemukan, skip"
-        }
-    
     # ==========================================
-    # 10. TRIGGER NEXT RUN
+    # 9. TRIGGER NEXT RUN
     # ==========================================
     - name: Trigger Next Run
       run: |
         $version = "${{ github.event.inputs.version }}"
-        $storage = "${{ github.event.inputs.storage }}"
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen-ultimate.yml/dispatches \
-          -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\", \"storage\":\"$storage\"}}"
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen-final.yml/dispatches \
+          -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
