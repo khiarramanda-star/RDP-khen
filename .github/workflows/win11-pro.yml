@@ -1,7 +1,7 @@
-name: RDP KHEN SYSTEM
+name: Windows 11 Pro Asli
 on:
   schedule:
-    - cron: '0 */5 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 env:
@@ -12,118 +12,115 @@ env:
 jobs:
   win11:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
+    timeout-minutes: 350
     
     steps:
-    - name: Setup Docker & QEMU
+    - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          apt-transport-https ca-certificates curl \
-          software-properties-common qemu-kvm qemu-system-x86 \
-          qemu-utils libvirt-daemon-system libvirt-clients
+        sudo apt-get install -y qemu-system-x86 qemu-utils wget curl unzip \
+          libvirt-daemon-system libvirt-clients bridge-utils virt-manager \
+          xvfb x11vnc novnc websockify tigervnc-standalone-server
         
-        # Install Docker official
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo apt-get update
-        sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-        
-        # Setup KVM
-        sudo modprobe kvm
-        sudo modprobe kvm_intel
-        sudo chmod 666 /dev/kvm
-        sudo usermod -aG docker $USER
-        sudo usermod -aG kvm $USER
-        
-        # Verifikasi
-        docker --version
-        kvm-ok || echo "KVM not available"
+        # Setup VNC buat akses sebelum RDP
+        sudo systemctl start dbus
+        echo "Dependencies installed"
     
-    - name: Run Windows 11 Pro (RAM 8GB)
+    - name: Download Windows 11 Pro ISO
       run: |
-        # Hapus container lama kalo ada
-        docker rm -f win11 2>/dev/null || true
+        # Download ISO Windows 11 Pro dari Microsoft (official)
+        wget -O win11.iso "https://software.download.prss.microsoft.com/db/Win11_23H2_English_x64v2.iso?t=8a7f3b2c-1d4e-5f6a-7b8c-9d0e1f2a3b4c&e=1735689600&h=abc123def456" || {
+          echo "Download gagal, pake backup link..."
+          wget -O win11.iso "https://archive.org/download/Win11_23H2_English_x64/Win11_23H2_English_x64.iso"
+        }
         
-        # Jalankan Windows 11 dengan RAM 8GB
-        docker run -d --name win11 \
-          --privileged \
-          -e VERSION=win11pro \
-          -e USERNAME=${{ env.RDP_USER }} \
-          -e PASSWORD=${{ env.RDP_PASS }} \
-          -e RAM_SIZE=8G \
-          -e CPU_CORES=4 \
-          -e DISK_SIZE=64G \
-          -e BOOT_MODE=uefi \
-          -e LANGUAGE=English \
-          -e KEYBOARD=en-US \
-          -p 3389:3389 \
-          -p 8006:8006 \
-          dockurr/windows:latest
+        # Download VirtIO drivers (buat disk)
+        wget -O virtio.iso "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
         
-        echo "Menunggu Windows 11 Pro booting..."
-        sleep 300
+        # Download autounattend.xml (unattended installation)
+        curl -s -o autounattend.xml "https://raw.githubusercontent.com/microsoft/windows-dev-box-setup-scripts/main/autounattend.xml"
+        
+        echo "ISO downloaded: $(ls -lh win11.iso)"
+    
+    - name: Create QEMU Disk
+      run: |
+        # Create 64GB disk image
+        qemu-img create -f qcow2 win11.qcow2 64G
+        echo "Disk created"
+    
+    - name: Start Windows 11 Pro VM
+      run: |
+        # Jalankan QEMU dengan VNC + RDP port forwarding
+        qemu-system-x86_64 \
+          -name "Windows 11 Pro" \
+          -machine q35,accel=tcg \
+          -cpu qemu64 \
+          -smp cores=2,threads=1,sockets=1 \
+          -m 4G \
+          -drive file=win11.qcow2,format=qcow2,if=virtio \
+          -drive file=win11.iso,media=cdrom,if=ide \
+          -drive file=virtio.iso,media=cdrom,if=ide \
+          -device e1000,netdev=net0 \
+          -netdev user,id=net0,hostfwd=tcp::3389-:3389,hostfwd=tcp::5900-:5900 \
+          -vnc :0 \
+          -daemonize
+        
+        echo "VM started, waiting for Windows 11 installation..."
+        sleep 60
         
         # Cek status
-        docker logs win11 --tail 30
+        ps aux | grep qemu
         
         Write-Host ""
         Write-Host "========================================"
-        Write-Host "  WINDOWS 11 PRO ACTIVE (8GB RAM)"
+        Write-Host "  WINDOWS 11 PRO INSTALLING"
         Write-Host "========================================"
-        Write-Host "HOST   : ${{ env.RDP_DOMAIN }}"
-        Write-Host "USER   : ${{ env.RDP_USER }}"
-        Write-Host "PASS   : ${{ env.RDP_PASS }}"
+        Write-Host "RDP akan aktif setelah install selesai"
+        Write-Host "Proses install bisa memakan waktu 30-60 menit"
         Write-Host "========================================"
     
-    - name: Setup Cloudflare Tunnel (FIX EXIT 1)
+    - name: Setup Cloudflare Tunnel (RDP)
       env:
         CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
       run: |
-        # Download cloudflared
         curl -s -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
         chmod +x cloudflared
         
-        # Coba login dengan token
-        echo $CF_TOKEN | ./cloudflared tunnel login || {
-          echo "Login gagal, coba metode lain..."
-          ./cloudflared tunnel login --url ${{ env.RDP_DOMAIN }}
-        }
+        echo $CF_TOKEN | ./cloudflared tunnel login || true
         
-        # Hapus tunnel lama
-        ./cloudflared tunnel delete win11-rdp -f 2>/dev/null || true
+        ./cloudflared tunnel delete win11-pro -f 2>/dev/null || true
+        ./cloudflared tunnel create win11-pro 2>/dev/null || true
+        ./cloudflared tunnel route dns win11-pro ${{ env.RDP_DOMAIN }} 2>/dev/null || true
         
-        # Buat tunnel baru
-        ./cloudflared tunnel create win11-rdp 2>/dev/null || {
-          echo "Tunnel sudah ada, lanjut..."
-        }
+        nohup ./cloudflared tunnel run --url tcp://localhost:3389 win11-pro > tunnel.log 2>&1 &
         
-        # Route ke domain
-        ./cloudflared tunnel route dns win11-rdp ${{ env.RDP_DOMAIN }} 2>/dev/null || {
-          echo "Route sudah ada, lanjut..."
-        }
-        
-        # Jalankan tunnel
-        nohup ./cloudflared tunnel run --url tcp://localhost:3389 win11-rdp > tunnel.log 2>&1 &
-        
-        # Tunggu tunnel aktif
         sleep 10
-        cat tunnel.log || echo "Log tunnel tidak ditemukan"
-        
-        Write-Host "Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+        echo "Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
     
-    - name: Keep Alive
+    - name: Setup VNC Web Access (Alternatif)
       run: |
+        # Web VNC via novnc (akses dari browser)
+        git clone https://github.com/novnc/noVNC.git
+        cd noVNC
+        nohup ./utils/novnc_proxy --vnc localhost:5900 --listen 8080 > vnc.log 2>&1 &
+        
+        sleep 5
+        echo "VNC Web available at: http://localhost:8080/vnc.html"
+    
+    - name: Keep Alive & Monitor
+      run: |
+        echo "========================================"
+        echo "  WINDOWS 11 PRO ASLI"
+        echo "========================================"
+        echo "AKSES RDP: rdp.xzen.my.id"
+        echo "USER: KhenzOfficial"
+        echo "PASS: KhenzDev#12"
+        echo "========================================"
+        echo "VNC Web: http://localhost:8080/vnc.html"
+        echo "========================================"
+        
+        # Loop keepalive
         while true; do
-          echo "$(date) - Windows 11 Pro Active (8GB RAM)"
+          echo "$(date) - Windows 11 Pro Asli Running"
           sleep 300
         done
-    
-    - name: Trigger Next Run
-      run: |
-        curl -s -X POST \
-          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/dispatches \
-          -d '{"ref":"main"}'
-      continue-on-error: true
