@@ -1,208 +1,197 @@
-name: KHEN RDP ULTIMATE
+name: KHEN RDP - Mega.nz Storage
 on:
   workflow_dispatch:
     inputs:
       version:
         description: 'Pilih versi Windows'
         required: true
-        default: 'pro-ryzen'
+        default: 'windows-latest'
         type: choice
         options:
-          - pro-ryzen
-          - arm-basic
+          - windows-latest
+          - windows-11-arm
   schedule:
     - cron: '0 */5 * * *'
 
 env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
-  RDP_DOMAIN: rdp.xzen.my.id
+  ZT_NETWORK: 743993800fc54708
   DATA_PATH: C:\khen-data
+  MEGA_EMAIL: ${{ secrets.MEGA_EMAIL }}
+  MEGA_PASS: ${{ secrets.MEGA_PASS }}
 
 jobs:
   rdp:
-    runs-on: ${{ github.event.inputs.version == 'arm-basic' && 'windows-11-arm' || 'windows-latest' }}
+    runs-on: ${{ github.event.inputs.version }}
     timeout-minutes: 350
     
     steps:
     # ==========================================
-    # 1. PREPARE & CLEANUP
+    # 1. INSTALL DEPENDENCIES
     # ==========================================
-    - name: Prepare Environment
+    - name: Install Tools
       run: |
+        choco install megatools rclone 7zip -y
+        Write-Host "✅ Tools installed"
+
+    # ==========================================
+    # 2. MOUNT MEGA.nz AS DRIVE (Opsional)
+    # ==========================================
+    - name: Mount Mega.nz
+      run: |
+        # Buat folder mount
+        New-Item -ItemType Directory -Force -Path D:\mega
+
+        # Config rclone for Mega
+        rclone config create mega mega user $env:MEGA_EMAIL pass $env:MEGA_PASS
+
+        # Mount Mega as drive
+        Start-Process -FilePath "rclone" -ArgumentList "mount mega: D:\mega --vfs-cache-mode writes --vfs-cache-max-size 10G" -WindowStyle Hidden
+
+        # Tunggu mount
+        Start-Sleep -Seconds 10
+
         Write-Host "========================================"
-        Write-Host "  KHEN RDP ULTIMATE"
-        Write-Host "  Version: ${{ github.event.inputs.version }}"
+        Write-Host "  ✅ MEGA.nz MOUNTED"
         Write-Host "========================================"
-        
-        # Bersihin disk
-        Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "PATH: D:\mega"
+        Write-Host "SIZE: 50 GB (gratis)"
+        Write-Host "========================================"
+
+    # ==========================================
+    # 3. RESTORE DATA DARI MEGA
+    # ==========================================
+    - name: Restore dari Mega.nz
+      run: |
+        # Cek apakah ada backup di Mega
+        megals --username $env:MEGA_EMAIL --password $env:MEGA_PASS /Root/ | Select-String "KHEN-BACKUP.zip"
+
+        if ($?) {
+          Write-Host "✅ Backup ditemukan, download..."
+
+          # Download backup dari Mega
+          megaget --username $env:MEGA_EMAIL --password $env:MEGA_PASS /Root/KHEN-BACKUP.zip
+
+          # Extract
+          Expand-Archive -Path KHEN-BACKUP.zip -DestinationPath ${{ env.DATA_PATH }} -Force
+
+          Write-Host "✅ Data restored dari Mega.nz"
+        } else {
+          Write-Host "⚠️ Tidak ada backup di Mega, memulai fresh"
+        }
+
+    # ==========================================
+    # 4. FREE DISK SPACE
+    # ==========================================
+    - name: Free Disk Space
+      run: |
         Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
-        
+        Remove-Item -Path "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "✅ Disk cleaned"
-    
+
     # ==========================================
-    # 2. RESTORE DATA (CACHE)
+    # 5. ENABLE RDP
     # ==========================================
-    - name: Restore dari Cache
-      uses: actions/cache@v4
-      id: cache
-      with:
-        path: ${{ env.DATA_PATH }}
-        key: khen-data-${{ github.run_id }}
-        restore-keys: |
-          khen-data-
-    
-    # ==========================================
-    # 3. RESTORE DARI ARTIFACT (KALO ADA)
-    # ==========================================
-    - name: Restore dari Artifact
-      uses: actions/download-artifact@v4
-      if: steps.cache.outputs.cache-hit != 'true'
-      with:
-        name: khen-data-backup
-        path: ${{ env.DATA_PATH }}
-      continue-on-error: true
-    
-    # ==========================================
-    # 4. SYSTEM INFO
-    # ==========================================
-    - name: System Info
+    - name: Enable RDP
       run: |
-        Write-Host "========================================"
-        Write-Host "  SYSTEM INFO"
-        Write-Host "========================================"
-        Write-Host "CPU:"
-        Get-WmiObject -Class Win32_Processor
-        Write-Host "RAM:"
-        Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
-        Write-Host "========================================"
-        
-        if (Test-Path "${{ env.DATA_PATH }}") {
-          try {
-            $size = (Get-ChildItem -Path ${{ env.DATA_PATH }} -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
-            if ($size -and $size -gt 0) {
-              Write-Host "📁 DATA SIZE: $([math]::Round($size / 1MB, 2)) MB"
-            } else {
-              Write-Host "📁 DATA SIZE: 0 MB (kosong - first run)"
-            }
-          } catch {
-            Write-Host "📁 DATA: Folder kosong"
-          }
-        } else {
-          Write-Host "📁 DATA: Belum ada (first run)"
-        }
-        Write-Host "========================================"
-    
-    # ==========================================
-    # 5. SETUP RDP
-    # ==========================================
-    - name: Setup RDP
-      run: |
-        # Enable RDP
         Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
         Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 1
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        
-        # Create user
-        $userExists = net user ${{ env.RDP_USER }} 2>&1 | Select-String "User name"
-        if ($userExists) {
-          Write-Host "✅ User ${{ env.RDP_USER }} sudah ada"
-        } else {
-          net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
-          net localgroup "Administrators" ${{ env.RDP_USER }} /add
-          net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
-          Write-Host "✅ User ${{ env.RDP_USER }} created"
-        }
-        
-        # Setup folder data
+
+        net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
+        net localgroup "Administrators" ${{ env.RDP_USER }} /add
+        net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
+
+        # Buat folder di local (backup ke Mega nanti)
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Downloads
-        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
-        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
-        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
-        
+
         # Redirect user folders
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        @('Desktop','Documents','Downloads','Pictures','Music','Videos') | ForEach-Object {
-          $target = "${{ env.DATA_PATH }}\$_"
-          if (!(Test-Path "$userPath\$_")) {
-            cmd /c mklink /J "$userPath\$_" "$target" 2>$null
-          }
-        }
-        
-        # Config
-        @"
-        ╔═══════════════════════════════════════════════════╗
-        ║              KHEN RDP ULTIMATE                   ║
-        ╠═══════════════════════════════════════════════════╣
-        ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
-        ║ USER      : ${{ env.RDP_USER }}                 ║
-        ║ PASS      : ${{ env.RDP_PASS }}                 ║
-        ║ DATA      : ${{ env.DATA_PATH }}                ║
-        ║ VERSION   : ${{ github.event.inputs.version }}  ║
-        ║ STATUS    : ONLINE                              ║
-        ╚═══════════════════════════════════════════════════╝
-        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
-        
-        Write-Host ""
+        cmd /c mklink /J "$userPath\Desktop" "${{ env.DATA_PATH }}\Desktop" 2>$null
+        cmd /c mklink /J "$userPath\Documents" "${{ env.DATA_PATH }}\Documents" 2>$null
+        cmd /c mklink /J "$userPath\Downloads" "${{ env.DATA_PATH }}\Downloads" 2>$null
+
         Write-Host "========================================"
         Write-Host "  ✅ KHEN RDP ACTIVE"
         Write-Host "========================================"
-        Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
+        Write-Host "VERSION: ${{ github.event.inputs.version }}"
+        Write-Host "USER   : ${{ env.RDP_USER }}"
+        Write-Host "PASS   : ${{ env.RDP_PASS }}"
+        Write-Host "DATA   : ${{ env.DATA_PATH }}"
+        Write-Host "BACKUP : Mega.nz (50 GB)"
         Write-Host "========================================"
-        Write-Host "✅ DATA AMAN! Tidak hilang walau restart"
-        Write-Host "========================================"
-    
+
     # ==========================================
-    # 6. CLOUDFLARE TUNNEL (PAKE TOKEN cfut_)
+    # 6. ZEROTIER
     # ==========================================
-    - name: Cloudflare Tunnel
-      env:
-        CF_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+    - name: ZeroTier
       run: |
-        # Download cloudflared
-        curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-        
-        # Jalankan tunnel langsung pake token cfut_
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --token $env:CF_TUNNEL_TOKEN" -WindowStyle Hidden -PassThru
-        
-        Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
-        Write-Host "⚠️  Tunggu 1-2 menit, DNS Cloudflare perlu propagate"
-    
+        curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
+        msiexec /i ZeroTier.msi /quiet /norestart
+        Start-Sleep -Seconds 10
+        & "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe" -q join ${{ env.ZT_NETWORK }}
+        Start-Sleep -Seconds 15
+        $ip = & "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe" -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
+        Write-Host "========================================"
+        Write-Host "  ✅ ZEROTIER ACTIVE"
+        Write-Host "========================================"
+        Write-Host "IP   : $ip"
+        Write-Host "USER : ${{ env.RDP_USER }}"
+        Write-Host "PASS : ${{ env.RDP_PASS }}"
+        Write-Host "========================================"
+
     # ==========================================
-    # 7. KEEP ALIVE
+    # 7. KEEP ALIVE & BACKUP
     # ==========================================
-    - name: Keep Alive
+    - name: Keep Alive & Backup
       run: |
         while ($true) {
-          Write-Host "$(Get-Date) - KHEN RDP ULTIMATE ACTIVE"
+          Write-Host "$(Get-Date) - KHEN ACTIVE"
+
+          # Backup setiap 30 menit
+          if ((Get-Date).Minute -in @(0,30)) {
+            Write-Host "📤 Backup ke Mega.nz..."
+
+            # Compress data
+            Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\KHEN-BACKUP.zip -Force
+
+            # Upload ke Mega
+            megaput --username $env:MEGA_EMAIL --password $env:MEGA_PASS C:\KHEN-BACKUP.zip
+
+            Write-Host "✅ Backup uploaded to Mega.nz"
+          }
+
           Start-Sleep -Seconds 300
         }
-    
+
     # ==========================================
-    # 8. BACKUP KE ARTIFACT
+    # 8. UPLOAD BACKUP SAAT WORKFLOW SELESAI
     # ==========================================
-    - name: Upload Backup ke Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: khen-data-backup
-        path: ${{ env.DATA_PATH }}
-        retention-days: 90
-    
+    - name: Upload Backup ke Mega.nz
+      run: |
+        # Compress data
+        Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\KHEN-BACKUP.zip -Force
+
+        # Upload ke Mega
+        megaput --username $env:MEGA_EMAIL --password $env:MEGA_PASS C:\KHEN-BACKUP.zip
+
+        Write-Host "✅ Backup uploaded to Mega.nz"
+
     # ==========================================
     # 9. TRIGGER NEXT RUN
     # ==========================================
-    - name: Trigger Next Run
+    - name: Trigger Next
       run: |
         $version = "${{ github.event.inputs.version }}"
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen-ultimate.yml/dispatches \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-mega.yml/dispatches \
           -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
