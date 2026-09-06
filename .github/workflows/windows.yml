@@ -1,4 +1,4 @@
-name: KHEN RDP - Tailscale + Cloudflare
+name: KHEN RDP ULTIMATE
 on:
   workflow_dispatch:
     inputs:
@@ -21,6 +21,7 @@ env:
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
   DATA_PATH: C:\khen-data
+  ZT_NETWORK: 743993800fc54708
 
 jobs:
   rdp:
@@ -40,7 +41,7 @@ jobs:
     - name: Cleanup
       run: |
         Write-Host "========================================"
-        Write-Host "  KHEN RDP - ${{ github.event.inputs.version }}"
+        Write-Host "  KHEN RDP ULTIMATE - ${{ github.event.inputs.version }}"
         Write-Host "========================================"
         
         Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
@@ -103,7 +104,7 @@ jobs:
         net localgroup Administrators ${{ env.RDP_USER }} /add 2>$null
         net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add 2>$null
         
-        # Setup folder data
+        # Setup folder
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -111,11 +112,10 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
-        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
         
         # Redirect user folders
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects') | ForEach-Object {
+        @('Desktop','Documents','Downloads','Pictures','Music','Videos') | ForEach-Object {
           $target = "${{ env.DATA_PATH }}\$_"
           if (!(Test-Path "$userPath\$_")) {
             cmd /c mklink /J "$userPath\$_" "$target" 2>$null
@@ -125,7 +125,7 @@ jobs:
         # Config
         @"
         ╔═══════════════════════════════════════════════════╗
-        ║              KHEN RDP - TAILSCALE                ║
+        ║              KHEN RDP ULTIMATE                   ║
         ╠═══════════════════════════════════════════════════╣
         ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
         ║ USER      : ${{ env.RDP_USER }}                 ║
@@ -157,12 +157,14 @@ jobs:
         Write-Host "========================================"
         
         if (-not $env:CF_TOKEN) {
-          Write-Host "⚠️ No Cloudflare token, skip..."
+          Write-Host "❌ ERROR: CLOUDFLARE_TUNNEL_TOKEN not set!"
+          Write-Host "⚠️  Set secret dulu di Settings → Secrets → Actions"
           exit 0
         }
         
         curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
         
+        Write-Host "🔄 Starting Cloudflare Tunnel..."
         Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
         
         Start-Sleep -Seconds 5
@@ -170,7 +172,7 @@ jobs:
         Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
     
     # ==========================================
-    # 6. TAILSCALE VPN (GANTI ZEROTIER)
+    # 6. TAILSCALE VPN
     # ==========================================
     - name: Tailscale VPN
       env:
@@ -185,7 +187,6 @@ jobs:
           exit 0
         }
         
-        # Download Tailscale
         curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
         
         if (-not (Test-Path tailscale.msi)) {
@@ -193,22 +194,18 @@ jobs:
           exit 0
         }
         
-        # Install
         msiexec /i tailscale.msi /quiet /norestart
         Start-Sleep -Seconds 15
         
-        # Cek path
         $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
         if (-not (Test-Path $tsPath)) {
           Write-Host "⚠️ Tailscale not found, skip VPN..."
           exit 0
         }
         
-        # Login
         & $tsPath login --auth-key $env:TS_AUTHKEY
         Start-Sleep -Seconds 5
         
-        # Ambil IP
         $ip = & $tsPath ip
         
         Write-Host ""
@@ -228,7 +225,7 @@ jobs:
     - name: Keep Alive
       run: |
         while ($true) {
-          Write-Host "$(Get-Date) - KHEN RDP ACTIVE"
+          Write-Host "$(Get-Date) - KHEN RDP ULTIMATE ACTIVE"
           Start-Sleep -Seconds 300
         }
     
@@ -245,12 +242,12 @@ jobs:
     # ==========================================
     # 9. TRIGGER NEXT
     # ==========================================
-    - name: Trigger Next
+    - name: Trigger Next Run
       run: |
         $version = "${{ github.event.inputs.version }}"
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-tailscale.yml/dispatches \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches \
           -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
