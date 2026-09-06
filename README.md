@@ -20,9 +20,9 @@
 - ✅ Web status
 
 ## MONITORING
-- GitHub Actions: https://github.com/username/RDP-khen/actions
+- GitHub Actions: https://github.com/khiarramanda-star/RDP-khen/actions
 - Web Status: http://rdp.xzen.my.id:8080
-- Release Backup: https://github.com/username/RDP-khen/releases
+- Release Backup: https://github.com/khiarramanda-star/RDP-khen/releases
 
 ## KHEN SYSTEM
 © 2026 KHEN - All Rights Reserved
