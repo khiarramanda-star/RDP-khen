@@ -13,7 +13,7 @@ env:
 
 jobs:
   rdp:
-    runs-on: windows-pro
+    runs-on: windows-latest
     timeout-minutes: 350
     
     steps:
