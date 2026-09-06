@@ -88,10 +88,11 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
         
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects') | ForEach-Object {
-          $target = "${{ env.DATA_PATH }}\$_"
-          if (!(Test-Path "$userPath\$_")) {
-            cmd /c mklink /J "$userPath\$_" "$target" 2>$null
+        $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects')
+        foreach ($folder in $folders) {
+          $target = "${{ env.DATA_PATH }}\$folder"
+          if (!(Test-Path "$userPath\$folder")) {
+            cmd /c mklink /J "$userPath\$folder" "$target" 2>$null
           }
         }
         
@@ -107,9 +108,12 @@ jobs:
         "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
         Write-Host ""
-        Write-Host "✅ RDP ACTIVE"
-        Write-Host "User: ${{ env.RDP_USER }}"
-        Write-Host "Pass: ${{ env.RDP_PASS }}"
+        Write-Host "========================================"
+        Write-Host "  ✅ RDP ACTIVE"
+        Write-Host "========================================"
+        Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
+        Write-Host "========================================"
+        Write-Host "✅ DATA AMAN! Tidak hilang walau restart"
         Write-Host "========================================"
     
     - name: ZeroTier VPN
@@ -119,7 +123,7 @@ jobs:
         Write-Host "========================================"
         
         curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
-        if (-not (Test-Path ZeroTier.msi)) { 
+        if (-not (Test-Path ZeroTier.msi)) {
           Write-Host "⚠️ Download gagal, skip VPN..."
           exit 0
         }
@@ -133,9 +137,12 @@ jobs:
         )
         $zt = $null
         foreach ($p in $ztPaths) {
-          if (Test-Path $p) { $zt = $p; break }
+          if (Test-Path $p) {
+            $zt = $p
+            break
+          }
         }
-        if (-not $zt) { 
+        if (-not $zt) {
           Write-Host "⚠️ ZeroTier not found, skip VPN..."
           exit 0
         }
