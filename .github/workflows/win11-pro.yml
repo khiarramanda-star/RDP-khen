@@ -152,13 +152,26 @@ jobs:
         
         Write-Host "✅ Token ditemukan (length: $($env:CF_TOKEN.Length))"
         
-        curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+        curl.exe -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
         
         Write-Host "🔄 Starting Cloudflare Tunnel..."
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
+        
+        # Jalankan tunnel di background
+        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pinfo.FileName = ".\cloudflared.exe"
+        $pinfo.Arguments = "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN"
+        $pinfo.RedirectStandardOutput = $true
+        $pinfo.RedirectStandardError = $true
+        $pinfo.UseShellExecute = $false
+        $pinfo.CreateNoWindow = $true
+        
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $pinfo
+        $p.Start() | Out-Null
         
         Start-Sleep -Seconds 10
         
+        # Cek process
         $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
         if ($running) {
           Write-Host ""
@@ -173,8 +186,14 @@ jobs:
           Write-Host "========================================"
         } else {
           Write-Host "❌ Cloudflare Tunnel gagal start!"
-          Write-Host "⚠️  Cek token di dashboard Cloudflare"
-          exit 1
+          Write-Host ""
+          Write-Host "📌 KALO GAGAL, PAKE ZEROTIER MANUAL:"
+          Write-Host "1. Buka https://my.zerotier.com"
+          Write-Host "2. Join network: 743993800fc54708"
+          Write-Host "3. Authorize device"
+          Write-Host "4. RDP pake IP ZeroTier dari dashboard"
+          Write-Host "========================================"
+          exit 0
         }
     
     - name: Keep Alive
@@ -224,9 +243,26 @@ jobs:
     - name: Trigger Next Run
       if: always()
       run: |
-        curl -s -X POST \
-          -H "Authorization: token ${{ secrets.PAT_TOKEN }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches \
-          -d '{"ref":"main"}'
+        Write-Host "========================================"
+        Write-Host "  TRIGGER NEXT RUN"
+        Write-Host "========================================"
+        
+        $body = @{
+          ref = "main"
+        } | ConvertTo-Json
+        
+        try {
+          Invoke-RestMethod -Uri "https://api.github.com/repos/khiarramanda-star/RDP-khen/actions/workflows/win11-pro.yml/dispatches" `
+            -Method Post `
+            -Headers @{
+              "Authorization" = "token ${{ secrets.PAT_TOKEN }}"
+              "Accept" = "application/vnd.github.v3+json"
+            } `
+            -Body $body `
+            -ContentType "application/json"
+          
+          Write-Host "✅ Next run triggered"
+        } catch {
+          Write-Host "⚠️ Gagal trigger: $($_.Exception.Message)"
+        }
       continue-on-error: true
