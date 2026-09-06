@@ -19,39 +19,22 @@ on:
 env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
-  RDP_DOMAIN: rdp.xzen.my.id
+  ZT_NETWORK: 743993800fc54708
   DATA_PATH: C:\khen-data
 
 jobs:
   rdp:
-    runs-on: ${{ 
-      github.event.inputs.version == 'windows-11-pro' && 'windows-latest' ||
-      github.event.inputs.version == 'windows-10-pro' && 'windows-2019' ||
-      github.event.inputs.version == 'windows-server-2022' && 'windows-2022' ||
-      github.event.inputs.version == 'windows-server-2019' && 'windows-2019' ||
-      github.event.inputs.version == 'windows-server-2016' && 'windows-2016'
-    }}
+    runs-on: windows-latest
     timeout-minutes: 350
     
     steps:
-    # ==========================================
-    # 1. CLEANUP
-    # ==========================================
     - name: Cleanup
       run: |
-        Write-Host "========================================"
-        Write-Host "  KHEN RDP ULTIMATE - ${{ github.event.inputs.version }}"
-        Write-Host "========================================"
-        
         Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "✅ Cleanup done"
     
-    # ==========================================
-    # 2. RESTORE DATA (CACHE)
-    # ==========================================
     - name: Restore Cache
       uses: actions/cache@v4
       id: cache
@@ -68,42 +51,25 @@ jobs:
         path: ${{ env.DATA_PATH }}
       continue-on-error: true
     
-    # ==========================================
-    # 3. SYSTEM INFO
-    # ==========================================
     - name: System Info
       run: |
         Write-Host "========================================"
-        Write-Host "  SYSTEM INFO"
+        Write-Host "  SYSTEM INFO - ${{ github.event.inputs.version }}"
         Write-Host "========================================"
-        Write-Host "OS:"
         Get-WmiObject -Class Win32_OperatingSystem
-        Write-Host "CPU:"
         Get-WmiObject -Class Win32_Processor
-        Write-Host "RAM:"
         Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
-        Write-Host "========================================"
     
-    # ==========================================
-    # 4. SETUP RDP
-    # ==========================================
     - name: Setup RDP
       run: |
-        # Enable RDP
         reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
         reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
-        reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
-        
-        # Firewall
         netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
-        netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
         
-        # Buat user
         net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no 2>$null
         net localgroup Administrators ${{ env.RDP_USER }} /add 2>$null
         net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add 2>$null
         
-        # Setup folder data
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -111,142 +77,84 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
-        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
         
-        # Redirect user folders
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects') | ForEach-Object {
+        @('Desktop','Documents','Downloads','Pictures','Music','Videos') | ForEach-Object {
           $target = "${{ env.DATA_PATH }}\$_"
           if (!(Test-Path "$userPath\$_")) {
             cmd /c mklink /J "$userPath\$_" "$target" 2>$null
           }
         }
         
-        # Config
         @"
-        ╔═══════════════════════════════════════════════════╗
-        ║              KHEN RDP ULTIMATE                   ║
-        ╠═══════════════════════════════════════════════════╣
-        ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
-        ║ USER      : ${{ env.RDP_USER }}                 ║
-        ║ PASS      : ${{ env.RDP_PASS }}                 ║
-        ║ DATA      : ${{ env.DATA_PATH }}                ║
-        ║ VERSION   : ${{ github.event.inputs.version }}  ║
-        ║ STATUS    : ONLINE                              ║
-        ╚═══════════════════════════════════════════════════╝
+        ╔═══════════════════════════════════════════╗
+        ║       KHEN RDP ULTIMATE                  ║
+        ╠═══════════════════════════════════════════╣
+        ║ USER   : ${{ env.RDP_USER }}             ║
+        ║ PASS   : ${{ env.RDP_PASS }}             ║
+        ║ DATA   : ${{ env.DATA_PATH }}            ║
+        ║ STATUS : ONLINE                          ║
+        ╚═══════════════════════════════════════════╝
         "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
-        Write-Host ""
-        Write-Host "========================================"
-        Write-Host "  ✅ KHEN RDP ACTIVE"
-        Write-Host "========================================"
-        Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
-        Write-Host "========================================"
-        Write-Host "✅ DATA AMAN! Tidak hilang walau restart"
-        Write-Host "========================================"
+        Write-Host "✅ RDP Active - User: ${{ env.RDP_USER }} | Pass: ${{ env.RDP_PASS }}"
     
-    # ==========================================
-    # 5. CLOUDFLARE TUNNEL
-    # ==========================================
-    - name: Cloudflare Tunnel
-      env:
-        CF_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+    - name: ZeroTier VPN
       run: |
         Write-Host "========================================"
-        Write-Host "  CLOUDFLARE TUNNEL"
+        Write-Host "  ZEROTIER VPN"
         Write-Host "========================================"
         
-        if (-not $env:CF_TOKEN) {
-          Write-Host "⚠️ No Cloudflare token, skipping..."
-          exit 0
-        }
+        curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
+        if (-not (Test-Path ZeroTier.msi)) { exit 0 }
         
-        curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-        
-        Write-Host "🔄 Starting Cloudflare Tunnel..."
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
-        
-        Start-Sleep -Seconds 5
-        Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
-        Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
-    
-    # ==========================================
-    # 6. TAILSCALE VPN
-    # ==========================================
-    - name: Tailscale VPN
-      env:
-        TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
-      run: |
-        Write-Host "========================================"
-        Write-Host "  TAILSCALE VPN"
-        Write-Host "========================================"
-        
-        if (-not $env:TS_AUTHKEY) {
-          Write-Host "⚠️ No Tailscale auth key, skipping..."
-          exit 0
-        }
-        
-        curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
-        
-        if (-not (Test-Path tailscale.msi)) {
-          Write-Host "⚠️ Download Tailscale gagal, skipping..."
-          exit 0
-        }
-        
-        msiexec /i tailscale.msi /quiet /norestart
+        msiexec /i ZeroTier.msi /quiet /norestart
         Start-Sleep -Seconds 15
         
-        $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
-        if (-not (Test-Path $tsPath)) {
-          Write-Host "⚠️ Tailscale not found, skipping..."
-          exit 0
+        $ztPaths = @(
+          "C:\Program Files\ZeroTier\One\zerotier-one.exe",
+          "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe"
+        )
+        $zt = $null
+        foreach ($p in $ztPaths) {
+          if (Test-Path $p) { $zt = $p; break }
         }
+        if (-not $zt) { exit 0 }
         
-        & $tsPath login --auth-key $env:TS_AUTHKEY
-        Start-Sleep -Seconds 5
+        & $zt -q join ${{ env.ZT_NETWORK }}
+        Start-Sleep -Seconds 15
         
-        $ip = & $tsPath ip
+        $ip = & $zt -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
         
-        Write-Host ""
         Write-Host "========================================"
-        Write-Host "  ✅ TAILSCALE ACTIVE"
+        Write-Host "  ✅ ZEROTIER ACTIVE"
         Write-Host "========================================"
         Write-Host "IP   : $ip"
         Write-Host "USER : ${{ env.RDP_USER }}"
         Write-Host "PASS : ${{ env.RDP_PASS }}"
         Write-Host "========================================"
-        Write-Host "⚠️  Bisa akses RDP pake IP Tailscale"
+        Write-Host "⚠️  Buka ZeroTier Dashboard, Authorize device!"
         Write-Host "========================================"
     
-    # ==========================================
-    # 7. KEEP ALIVE
-    # ==========================================
     - name: Keep Alive
       run: |
         while ($true) {
-          Write-Host "$(Get-Date) - KHEN RDP ULTIMATE ACTIVE"
+          Write-Host "$(Get-Date) - KHEN RDP ACTIVE"
           Start-Sleep -Seconds 300
         }
     
-    # ==========================================
-    # 8. BACKUP KE ARTIFACT
-    # ==========================================
-    - name: Upload Backup ke Artifact
+    - name: Upload Backup
       uses: actions/upload-artifact@v4
       with:
         name: khen-data-backup
         path: ${{ env.DATA_PATH }}
         retention-days: 90
     
-    # ==========================================
-    # 9. TRIGGER NEXT RUN
-    # ==========================================
     - name: Trigger Next Run
       run: |
-        $version = "${{ github.event.inputs.version }}"
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
           https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches \
-          -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
+          -d '{"ref":"main"}'
       continue-on-error: true
