@@ -11,21 +11,65 @@ jobs:
   restore:
     runs-on: windows-latest
     steps:
-    - name: Download Backup
+    - name: Download Backup dari Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         $tag = "khen-backup-${{ github.event.inputs.backup_date }}"
-        $release = curl -s -H "Authorization: token $env:GH_TOKEN" \
-          "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag" | ConvertFrom-Json
-        if ($release.assets) {
-          curl -s -L -o C:\restore.zip $release.assets[0].browser_download_url
-          Expand-Archive -Path C:\restore.zip -DestinationPath C:\restore-temp -Force
+        $url = "https://api.github.com/repos/${{ github.repository }}/releases/tags/$tag"
+        
+        try {
+          $release = curl -s -H "Authorization: token $env:GH_TOKEN" $url | ConvertFrom-Json
+          
+          if ($release.assets -and $release.assets.Count -gt 0) {
+            $asset = $release.assets[0]
+            $downloadUrl = $asset.browser_download_url
+            
+            Write-Host "Downloading backup from: $downloadUrl"
+            curl -s -L -o C:\restore.zip $downloadUrl
+            
+            Expand-Archive -Path C:\restore.zip -DestinationPath C:\restore-temp -Force
+            Write-Host "Backup extracted to C:\restore-temp"
+          } else {
+            Write-Host "No assets found in release $tag"
+            exit 1
+          }
+        } catch {
+          Write-Host "Backup $tag not found. Available backups:"
+          curl -s -H "Authorization: token $env:GH_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" | ConvertFrom-Json | ForEach-Object { $_.tag_name }
+          exit 1
         }
     
-    - name: Upload Restored Data
+    - name: Restore Data
+      run: |
+        $restorePath = "C:\khen-data"
+        
+        # Backup existing data if any
+        if (Test-Path $restorePath) {
+          $backupDir = "C:\khen-data-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+          Move-Item -Path $restorePath -Destination $backupDir -Force
+          Write-Host "Existing data backed up to: $backupDir"
+        }
+        
+        # Restore
+        if (Test-Path C:\restore-temp) {
+          Move-Item -Path C:\restore-temp\* -Destination $restorePath -Force
+          Write-Host "Data restored to: $restorePath"
+        } else {
+          Write-Host "No data to restore"
+          exit 1
+        }
+    
+    - name: Upload Restored Data ke Artifact
       uses: actions/upload-artifact@v4
       with:
         name: khen-backup
-        path: C:\restore-temp
+        path: C:\khen-data
         retention-days: 90
+    
+    - name: Cleanup
+      run: |
+        Remove-Item -Path C:\restore.zip -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path C:\restore-temp -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Restore complete!"
