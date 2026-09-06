@@ -5,13 +5,14 @@ on:
       version:
         description: 'Pilih versi Windows'
         required: true
-        default: 'windows-latest'
+        default: 'windows-11-pro'
         type: choice
         options:
-          - windows-latest
-          - windows-2022
-          - windows-2019
-          - windows-2016
+          - windows-11-pro
+          - windows-10-pro
+          - windows-server-2022
+          - windows-server-2019
+          - windows-server-2016
   schedule:
     - cron: '0 */5 * * *'
 
@@ -24,7 +25,13 @@ env:
 
 jobs:
   rdp:
-    runs-on: ${{ github.event.inputs.version }}
+    runs-on: ${{ 
+      github.event.inputs.version == 'windows-11-pro' && 'windows-latest' ||
+      github.event.inputs.version == 'windows-10-pro' && 'windows-2019' ||
+      github.event.inputs.version == 'windows-server-2022' && 'windows-2022' ||
+      github.event.inputs.version == 'windows-server-2019' && 'windows-2019' ||
+      github.event.inputs.version == 'windows-server-2016' && 'windows-2016'
+    }}
     timeout-minutes: 350
     
     steps:
@@ -44,7 +51,7 @@ jobs:
         Write-Host "✅ Cleanup done"
     
     # ==========================================
-    # 2. RESTORE DATA
+    # 2. RESTORE DATA (CACHE)
     # ==========================================
     - name: Restore Cache
       uses: actions/cache@v4
@@ -140,7 +147,7 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 5. CLOUDFLARE TUNNEL
+    # 5. CLOUDFLARE TUNNEL (FIXED)
     # ==========================================
     - name: Cloudflare Tunnel
       env:
@@ -152,7 +159,7 @@ jobs:
         
         if (-not $env:CF_TOKEN) {
           Write-Host "❌ ERROR: CLOUDFLARE_TUNNEL_TOKEN not set!"
-          Write-Host "⚠️  Skip Cloudflare, lanjut ke ZeroTier..."
+          Write-Host "⚠️  Set secret dulu di Settings → Secrets → Actions"
           exit 0
         }
         
@@ -162,11 +169,18 @@ jobs:
         Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
         
         Start-Sleep -Seconds 5
-        Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
-        Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
+        
+        # Cek process
+        $process = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
+        if ($process) {
+          Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+          Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
+        } else {
+          Write-Host "⚠️ Tunnel mungkin gagal, cek log"
+        }
     
     # ==========================================
-    # 6. ZEROTIER VPN (BACKUP)
+    # 6. ZEROTIER VPN (FIXED)
     # ==========================================
     - name: ZeroTier VPN
       run: |
@@ -174,14 +188,41 @@ jobs:
         Write-Host "  ZEROTIER VPN"
         Write-Host "========================================"
         
+        # Download ZeroTier
         curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
-        msiexec /i ZeroTier.msi /quiet /norestart
-        Start-Sleep -Seconds 10
+        if (-not (Test-Path ZeroTier.msi)) {
+          Write-Host "⚠️ Download ZeroTier gagal, skip VPN..."
+          exit 0
+        }
         
-        $zt = "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe"
+        # Install
+        msiexec /i ZeroTier.msi /quiet /norestart
+        Start-Sleep -Seconds 15
+        
+        # Cek path ZeroTier
+        $ztPaths = @(
+          "C:\Program Files\ZeroTier\One\zerotier-one.exe",
+          "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe"
+        )
+        
+        $zt = $null
+        foreach ($p in $ztPaths) {
+          if (Test-Path $p) {
+            $zt = $p
+            break
+          }
+        }
+        
+        if (-not $zt) {
+          Write-Host "⚠️ ZeroTier not found, skip VPN..."
+          exit 0
+        }
+        
+        # Join network
         & $zt -q join ${{ env.ZT_NETWORK }}
         Start-Sleep -Seconds 15
         
+        # Ambil IP
         $ip = & $zt -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
         
         Write-Host ""
@@ -193,6 +234,7 @@ jobs:
         Write-Host "PASS : ${{ env.RDP_PASS }}"
         Write-Host "========================================"
         Write-Host "⚠️  Buka ZeroTier Dashboard, Authorize device!"
+        Write-Host "⚠️  Kalo gak ada IP, cek dashboard dan authorize"
         Write-Host "========================================"
     
     # ==========================================
