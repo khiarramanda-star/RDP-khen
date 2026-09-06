@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 env:
-  RDP_USER: KhenzOfflicial
+  RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
   DATA_PATH: C:\khen-data
@@ -34,24 +34,29 @@ jobs:
     
     - name: Setup RDP KHEN
       run: |
+        # Enable RDP
         Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
         Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 1
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         
+        # Buat user KHEN
         net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
         net localgroup "Administrators" ${{ env.RDP_USER }} /add
         net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
         
+        # Setup folder persistent
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Downloads
         
+        # Redirect user folders
         $userPath = "C:\Users\${{ env.RDP_USER }}"
         cmd /c mklink /J "$userPath\Desktop" "${{ env.DATA_PATH }}\Desktop" 2>$null
         cmd /c mklink /J "$userPath\Documents" "${{ env.DATA_PATH }}\Documents" 2>$null
         cmd /c mklink /J "$userPath\Downloads" "${{ env.DATA_PATH }}\Downloads" 2>$null
         
+        # Config KHEN
         @"
         ╔═══════════════════════════════════════════╗
         ║       KHEN RDP SYSTEM ACTIVE             ║
@@ -64,25 +69,65 @@ jobs:
         ╚═══════════════════════════════════════════╝
         "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
+        Write-Host ""
         Write-Host "========================================"
         Write-Host "  KHEN RDP SYSTEM ACTIVE"
         Write-Host "========================================"
         Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
         Write-Host "========================================"
     
-    - name: Cloudflare Tunnel
+    - name: Setup Cloudflare Tunnel (FIXED)
       env:
         CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
       run: |
-        curl -s -L -o cf.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-        Start-Process -FilePath ".\cf.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }}" -WindowStyle Hidden
+        # Download cloudflared
+        curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+        
+        # Buat folder config
+        New-Item -ItemType Directory -Force -Path C:\Users\runneradmin\.cloudflared
+        
+        # Login pake token via pipe
+        echo $env:CF_TOKEN | .\cloudflared.exe tunnel login 2>&1 | Out-Null
+        
+        # Cek apakah tunnel sudah ada, kalo ada hapus dulu
+        .\cloudflared.exe tunnel list | Select-String "khen-rdp" > $null
+        if ($?) {
+          .\cloudflared.exe tunnel delete khen-rdp -f 2>&1 | Out-Null
+        }
+        
+        # Buat tunnel baru
+        .\cloudflared.exe tunnel create khen-rdp 2>&1 | Out-Null
+        
+        # Route ke domain
+        .\cloudflared.exe tunnel route dns khen-rdp ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
+        
+        # Cari credentials file
+        $credFile = Get-ChildItem -Path C:\Users\runneradmin\.cloudflared\*.json | Select-Object -First 1
+        
+        # Buat config file
+        @"
+        tunnel: khen-rdp
+        credentials-file: $($credFile.FullName)
+        ingress:
+          - hostname: ${{ env.RDP_DOMAIN }}
+            service: tcp://localhost:3389
+          - service: http_status:404
+        "@ | Out-File -FilePath C:\Users\runneradmin\.cloudflared\config.yml -Force
+        
+        # Jalankan tunnel di background
+        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-rdp" -WindowStyle Hidden -PassThru
+        
         Write-Host "Tunnel KHEN running"
     
     - name: Keep Alive KHEN
       run: |
         $seconds = 21000
+        $counter = 0
         while ($seconds -gt 0) {
-          "$(Get-Date) - KHEN ACTIVE" | Out-File -FilePath "${{ env.DATA_PATH }}\heartbeat.txt" -Append
+          $counter++
+          $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          "$time - KHEN ACTIVE #$counter" | Out-File -FilePath "${{ env.DATA_PATH }}\heartbeat.txt" -Append
+          Write-Host "[$time] KHEN ACTIVE - $counter"
           Start-Sleep -Seconds 300
           $seconds -= 300
         }
