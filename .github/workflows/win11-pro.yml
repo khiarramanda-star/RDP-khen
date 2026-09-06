@@ -34,7 +34,7 @@ env:
   BACKUP_ENABLED: ${{ github.event.inputs.backup == 'yes' }}
 
 jobs:
-  gaming:
+  ryzen-gaming:
     runs-on: ${{ 
       github.event.inputs.windows_version == 'windows-11-gaming' && 'windows-latest' ||
       github.event.inputs.windows_version == 'windows-10-gaming' && 'windows-2019' ||
