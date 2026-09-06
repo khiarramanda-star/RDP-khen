@@ -44,19 +44,22 @@ jobs:
         path: ${{ env.DATA_PATH }}
       continue-on-error: true
     
-    # ===== RESTORE DARI GOOGLE DRIVE (KALO SEMUA KOSONG) =====
-    - name: Setup Rclone & Restore dari Google Drive
+    # ===== RESTORE DARI GOOGLE DRIVE (OPSIONAL, SKIP KALO ERROR) =====
+    - name: Setup Rclone (Opsional)
       uses: AnimMouse/setup-rclone@v1
       continue-on-error: true
-      with:
-        rclone_conf: ${{ secrets.RCLONE_CONF }}
     
-    - name: Restore dari Google Drive
+    - name: Restore dari Google Drive (Skip kalo error)
       continue-on-error: true
       run: |
-        mkdir ${{ env.DATA_PATH }} -Force
-        rclone copy gdrive:khen-data ${{ env.DATA_PATH }} --verbose
-        Write-Host "Data restored from Google Drive"
+        # Cek apakah rclone.conf ada
+        if (Test-Path "C:\Users\runneradmin\AppData\Roaming\rclone\rclone.conf") {
+          mkdir ${{ env.DATA_PATH }} -Force
+          rclone copy gdrive:khen-data ${{ env.DATA_PATH }} --verbose 2>&1
+          Write-Host "Data restored from Google Drive"
+        } else {
+          Write-Host "SKIP: rclone.conf tidak ditemukan, lanjut tanpa Google Drive"
+        }
     
     # ===== INFO SPESIFIKASI =====
     - name: Info Spesifikasi
@@ -71,7 +74,12 @@ jobs:
         Write-Host "========================================"
         Write-Host "DATA PATH: ${{ env.DATA_PATH }}"
         if (Test-Path "${{ env.DATA_PATH }}") {
-          Write-Host "DATA SIZE: $((Get-ChildItem -Path ${{ env.DATA_PATH }} -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB) MB"
+          $size = (Get-ChildItem -Path ${{ env.DATA_PATH }} -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+          if ($size) {
+            Write-Host "DATA SIZE: $([math]::Round($size / 1MB, 2)) MB"
+          } else {
+            Write-Host "DATA SIZE: 0 MB (kosong)"
+          }
         } else {
           Write-Host "DATA: Belum ada, akan dibuat baru"
         }
@@ -193,12 +201,16 @@ jobs:
         path: ${{ env.DATA_PATH }}
         retention-days: 90
     
-    # ===== UPLOAD BACKUP KE GOOGLE DRIVE =====
-    - name: Upload Backup ke Google Drive
+    # ===== UPLOAD BACKUP KE GOOGLE DRIVE (SKIP KALO ERROR) =====
+    - name: Upload Backup ke Google Drive (Opsional)
       continue-on-error: true
       run: |
-        rclone copy ${{ env.DATA_PATH }} gdrive:khen-data --verbose
-        Write-Host "Data backed up to Google Drive"
+        if (Test-Path "C:\Users\runneradmin\AppData\Roaming\rclone\rclone.conf") {
+          rclone copy ${{ env.DATA_PATH }} gdrive:khen-data --verbose 2>&1
+          Write-Host "Data backed up to Google Drive"
+        } else {
+          Write-Host "SKIP: rclone.conf tidak ditemukan, lanjut tanpa Google Drive"
+        }
     
     # ===== TRIGGER NEXT RUN =====
     - name: Trigger Next Run
