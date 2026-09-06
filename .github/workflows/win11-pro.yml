@@ -1,6 +1,29 @@
 name: Gaming
 on:
   workflow_dispatch:
+    inputs:
+      windows_version:
+        description: 'Pilih versi Windows'
+        required: true
+        default: 'windows-11-pro'
+        type: choice
+        options:
+          - windows-11-pro
+          - windows-10-pro
+          - windows-10-22h2
+          - windows-10-21h2
+          - windows-10-20h2
+          - windows-10-1909
+          - windows-8-pro
+          - windows-7-pro
+      backup:
+        description: 'Aktifkan Backup?'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - yes
+          - no
   schedule:
     - cron: '13 3,9,15,21 * * *'
 
@@ -13,44 +36,41 @@ env:
   RDP_PASS: KhenzDev#12
   DATA_PATH: C:\khen-data
   GAMING_PATH: D:\games
+  BACKUP_ENABLED: ${{ github.event.inputs.backup == 'yes' }}
 
 jobs:
   gaming:
-    runs-on: windows-latest
+    runs-on: ${{ 
+      github.event.inputs.windows_version == 'windows-11-pro' && 'windows-latest' ||
+      github.event.inputs.windows_version == 'windows-10-pro' && 'windows-2019' ||
+      github.event.inputs.windows_version == 'windows-10-22h2' && 'windows-2022' ||
+      github.event.inputs.windows_version == 'windows-10-21h2' && 'windows-2022' ||
+      github.event.inputs.windows_version == 'windows-10-20h2' && 'windows-2022' ||
+      github.event.inputs.windows_version == 'windows-10-1909' && 'windows-2022' ||
+      github.event.inputs.windows_version == 'windows-8-pro' && 'windows-2022' ||
+      github.event.inputs.windows_version == 'windows-7-pro' && 'windows-2022'
+    }}
     timeout-minutes: 240
     steps:
       # ==========================================
-      # 1. CLEANUP & FREE STORAGE
+      # 1. FREE STORAGE & RAM
       # ==========================================
       - name: Free Storage & RAM
         run: |
           Write-Host "========================================"
-          Write-Host "  FREE STORAGE & RAM"
+          Write-Host "  GAMING ULTIMATE"
+          Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
+          Write-Host "  Backup : ${{ github.event.inputs.backup }}"
           Write-Host "========================================"
-          
-          # Hapus Visual Studio (2-3GB)
           Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Hapus Windows Kits (1-2GB)
           Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Hapus .NET SDK (1-2GB)
           Remove-Item -Path "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Hapus temp files
           Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path C:\Windows\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Clear recycle bin
           Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-          
-          # Force garbage collection
           [System.GC]::Collect()
-          [System.GC]::WaitForPendingFinalizers()
-          
-          Write-Host "Storage freed"
-          Write-Host "========================================"
+          Write-Host "Storage & RAM freed"
 
       # ==========================================
       # 2. OPTIMASI RAM & VIRTUAL MEMORY
@@ -60,31 +80,18 @@ jobs:
           Write-Host "========================================"
           Write-Host "  OPTIMASI RAM & VIRTUAL MEMORY"
           Write-Host "========================================"
-          
-          # Stop service gak penting (free up RAM)
           Stop-Service -Name SysMain -Force -ErrorAction SilentlyContinue
           Stop-Service -Name WSearch -Force -ErrorAction SilentlyContinue
           Stop-Service -Name XboxNetApiSvc -Force -ErrorAction SilentlyContinue
           Stop-Service -Name DiagTrack -Force -ErrorAction SilentlyContinue
-          Stop-Service -Name lfsvc -Force -ErrorAction SilentlyContinue
-          Stop-Service -Name MapsBroker -Force -ErrorAction SilentlyContinue
-          Stop-Service -Name NetTcpPortSharing -Force -ErrorAction SilentlyContinue
-          
-          # Disable telemetry
-          reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" /v AllowTelemetry /t REG_DWORD /d 0 /f
-          
-          # Set pagefile 64GB (biar gak out of memory)
           $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
           $computerSystem.AutomaticManagedPagefile = $false
           $computerSystem.Put()
-          
           $pagefile = Get-WmiObject -Class Win32_PageFileSetting
           $pagefile.InitialSize = 65536
           $pagefile.MaximumSize = 65536
           $pagefile.Put()
-          
           Write-Host "Pagefile 64GB siap"
-          Write-Host "========================================"
 
       # ==========================================
       # 3. FPS BOOST & GAMING OPTIMIZATION
@@ -94,51 +101,21 @@ jobs:
           Write-Host "========================================"
           Write-Host "  FPS BOOST & GAMING OPTIMIZATION"
           Write-Host "========================================"
-          
-          # High Performance Power Plan
           powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-          
-          # Game Mode ON
           reg add "HKCU\Software\Microsoft\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f
           reg add "HKCU\Software\Microsoft\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f
-          
-          # GPU Hardware Scheduling
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f
-          
-          # GPU Priority for Games
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v GPU Priority /t REG_DWORD /d 8 /f
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v Priority /t REG_DWORD /d 6 /f
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v Scheduling Category /t REG_SZ /d High /f
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v SFIO Priority /t REG_SZ /d High /f
-          
-          # System Responsiveness (lower = more CPU for games)
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f
-          
-          # Disable Visual Effects (FPS Boost)
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f
-          
-          # Disable Animations
           reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f
           reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 0 /f
           reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f
-          
-          # Disable Taskbar Animations
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f
-          
-          # Disable Transparency Effects
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f
-          
-          # Disable Start Menu Animations
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v Start_ShowClassicMode /t REG_DWORD /d 1 /f
-          
-          # Disable Background Apps
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
-          
-          # Disable Window Animations
-          reg add "HKCU\Control Panel\Desktop" /v DragFullWindows /t REG_SZ /d 0 /f
-          
           Write-Host "FPS Boost applied"
-          Write-Host "========================================"
 
       # ==========================================
       # 4. NETWORK OPTIMIZER
@@ -148,40 +125,14 @@ jobs:
           Write-Host "========================================"
           Write-Host "  NETWORK OPTIMIZER"
           Write-Host "========================================"
-          
-          # TCP Auto-Tuning
           netsh int tcp set global autotuninglevel=normal
-          
-          # Disable Nagle's Algorithm
           reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /v TcpAckFrequency /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /v TCPNoDelay /t REG_DWORD /d 1 /f
-          
-          # Increase TCP Window Size
           reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpWindowSize /t REG_DWORD /d 65536 /f
-          
           Write-Host "Network optimized"
-          Write-Host "========================================"
 
       # ==========================================
-      # 5. DISK I/O BOOST
-      # ==========================================
-      - name: Disk I/O Boost
-        run: |
-          Write-Host "========================================"
-          Write-Host "  DISK I/O BOOST"
-          Write-Host "========================================"
-          
-          # Disable last access timestamp
-          fsutil behavior set disablelastaccess 1
-          
-          # Enable write caching on disks
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v WriteCache /t REG_DWORD /d 1 /f
-          
-          Write-Host "Disk I/O optimized"
-          Write-Host "========================================"
-
-      # ==========================================
-      # 6. RESTORE DATA
+      # 5. RESTORE DATA
       # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
@@ -194,40 +145,35 @@ jobs:
           restore-keys: gaming-
 
       - name: Restore Artifact
+        if: env.BACKUP_ENABLED == 'true' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/download-artifact@v4
-        if: steps.cache.outputs.cache-hit != 'true'
         with:
           name: gaming-backup
           path: ${{ env.DATA_PATH }}
         continue-on-error: true
 
       # ==========================================
-      # 7. SYSTEM INFO
+      # 6. SYSTEM INFO
       # ==========================================
       - name: System Info
         run: |
           Write-Host "========================================"
-          Write-Host "  SYSTEM INFO AFTER OPTIMIZATION"
+          Write-Host "  SYSTEM INFO"
           Write-Host "========================================"
-          Write-Host "CPU:"
           Get-WmiObject -Class Win32_Processor
-          Write-Host "RAM:"
           Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
-          Write-Host "GPU:"
           Get-WmiObject -Class Win32_VideoController
-          Write-Host "Storage:"
           Get-PSDrive C
           Write-Host "========================================"
 
       # ==========================================
-      # 8. SETUP RDP
+      # 7. SETUP RDP
       # ==========================================
       - name: Setup RDP
         run: |
           Write-Host "========================================"
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
-          
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
@@ -235,15 +181,11 @@ jobs:
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableCursorShadow /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableWallpaper /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableWddmDriver /t REG_DWORD /d 1 /f
-          
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
-          netsh advfirewall firewall add rule name="RDP-UDP" dir=in action=allow protocol=UDP localport=3389
-          
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
-          
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -252,42 +194,35 @@ jobs:
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\SaveGames
-          
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Steam
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Epic
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\GOG
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Rockstar
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Minecraft
-          
           $userPath = "C:\Users\${{ env.RDP_USER }}"
-          if (-not (Test-Path $userPath)) {
-            New-Item -ItemType Directory -Force -Path $userPath
-          }
-          
+          if (-not (Test-Path $userPath)) { New-Item -ItemType Directory -Force -Path $userPath }
           $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','SaveGames')
           foreach ($folder in $folders) {
             $target = "${{ env.DATA_PATH }}\$folder"
-            if (Test-Path "$userPath\$folder") {
-              Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue
-            }
+            if (Test-Path "$userPath\$folder") { Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue }
             cmd /c mklink /J "$userPath\$folder" "$target"
           }
-          
           $config = @"
           ============================================================
-          KHEN GAMING ULTIMATE - OPTIMIZED
+          KHEN GAMING ULTIMATE
           ============================================================
           USER      : ${{ env.RDP_USER }}
           PASS      : ${{ env.RDP_PASS }}
           DATA      : ${{ env.DATA_PATH }}
           GAMES     : ${{ env.GAMING_PATH }}
+          WINDOWS   : ${{ github.event.inputs.windows_version }}
+          BACKUP    : ${{ github.event.inputs.backup }}
           STATUS    : ONLINE
-          OPTIMASI  : RAM 64GB Pagefile, FPS Boost, Gaming Mode
+          OPTIMASI  : 64GB Pagefile, FPS Boost, Gaming Mode
           ============================================================
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
-          
           Write-Host ""
           Write-Host "========================================"
           Write-Host "  RDP GAMING ACTIVE"
@@ -296,24 +231,7 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # 9. INSTALL GAMING TOOLS
-      # ==========================================
-      - name: Install Gaming Tools
-        run: |
-          Write-Host "========================================"
-          Write-Host "  INSTALL GAMING TOOLS"
-          Write-Host "========================================"
-          
-          choco install directx -y 2>$null
-          choco install vulkan-runtime -y 2>$null
-          choco install vcredist-all -y 2>$null
-          choco install steam -y 2>$null
-          
-          Write-Host "Gaming tools installed"
-          Write-Host "========================================"
-
-      # ==========================================
-      # 10. TAILSCALE VPN
+      # 8. TAILSCALE VPN
       # ==========================================
       - name: Tailscale VPN
         env:
@@ -322,22 +240,14 @@ jobs:
           Write-Host "========================================"
           Write-Host "  TAILSCALE VPN"
           Write-Host "========================================"
-          
-          if (-not $env:TAILSCALE_AUTH_KEY) {
-            Write-Host "ERROR: TAILSCALE_AUTH_KEY not set"
-            exit 1
-          }
-          
+          if (-not $env:TAILSCALE_AUTH_KEY) { Write-Host "ERROR: TAILSCALE_AUTH_KEY not set"; exit 1 }
           curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
           msiexec /i tailscale.msi /quiet /norestart
           Start-Sleep -Seconds 15
-          
           $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
           & $tsPath login --auth-key $env:TAILSCALE_AUTH_KEY
           Start-Sleep -Seconds 5
-          
           $ip = & $tsPath ip
-          
           Write-Host ""
           Write-Host "========================================"
           Write-Host "  TAILSCALE ACTIVE"
@@ -346,11 +256,9 @@ jobs:
           Write-Host "USER : ${{ env.RDP_USER }}"
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
-          Write-Host "⚠️  Workflow mati 4 jam"
-          Write-Host "========================================"
 
       # ==========================================
-      # 11. KEEP ALIVE 4 JAM
+      # 9. KEEP ALIVE 4 JAM
       # ==========================================
       - name: Keep Alive
         run: |
@@ -364,20 +272,20 @@ jobs:
           Write-Host "     User: ${{ env.RDP_USER }}"
           Write-Host "     Pass: ${{ env.RDP_PASS }}"
           Write-Host ""
-          Write-Host "  Data Folder: ${{ env.DATA_PATH }} (PERMANEN)"
-          Write-Host "  Game Folder: ${{ env.GAMING_PATH }} (PERMANEN)"
+          Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
+          Write-Host "  Backup : ${{ github.event.inputs.backup }}"
+          Write-Host "  Data   : ${{ env.DATA_PATH }} (PERMANEN)"
+          Write-Host "  Games  : ${{ env.GAMING_PATH }} (PERMANEN)"
           Write-Host ""
           Write-Host "  OPTIMASI:"
           Write-Host "  - 64GB Pagefile"
           Write-Host "  - FPS Boost Registry"
           Write-Host "  - Gaming Mode ON"
           Write-Host "  - Network Optimizer"
-          Write-Host "  - Disk I/O Boost"
           Write-Host ""
           Write-Host "  ⏰ 4 jam tersisa..."
           Write-Host ""
           Write-Host "========================================"
-          
           $counter = 0
           while ($counter -lt 48) {
             $counter++
@@ -387,17 +295,27 @@ jobs:
           }
 
       # ==========================================
-      # 12. BACKUP
+      # 10. BACKUP
       # ==========================================
       - name: Upload Backup
+        if: env.BACKUP_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: gaming-backup
           path: ${{ env.DATA_PATH }}
           retention-days: 90
 
+      - name: Upload Backup (Disabled)
+        if: env.BACKUP_ENABLED != 'true'
+        run: |
+          Write-Host "========================================"
+          Write-Host "  SKIP BACKUP"
+          Write-Host "========================================"
+          Write-Host "BACKUP = ${{ github.event.inputs.backup }}"
+          Write-Host "========================================"
+
       # ==========================================
-      # 13. AUTO RESTART
+      # 11. AUTO RESTART
       # ==========================================
       - name: Trigger Next Run
         if: always()
