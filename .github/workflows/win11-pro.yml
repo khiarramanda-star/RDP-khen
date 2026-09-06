@@ -1,4 +1,4 @@
-name: KHEN RDP ULTIMATE
+name: KHEN RDP
 on:
   workflow_dispatch:
     inputs:
@@ -15,7 +15,7 @@ on:
           - windows-8-pro
           - windows-7-pro
       save_data:
-        description: 'Simpan data setelah session?'
+        description: 'Simpan data?'
         required: true
         default: 'yes'
         type: choice
@@ -23,7 +23,7 @@ on:
           - yes
           - no
       duration:
-        description: 'Durasi session (jam)'
+        description: 'Durasi (jam)'
         required: true
         default: '6'
         type: choice
@@ -45,28 +45,16 @@ env:
   DATA_PATH: C:\khen-data
   GAMING_PATH: D:\games
   BACKUP_ENABLED: ${{ github.event.inputs.save_data == 'yes' }}
-  DURATION_MINUTES: ${{ github.event.inputs.duration == '1' && 60 || github.event.inputs.duration == '2' && 120 || github.event.inputs.duration == '3' && 180 || github.event.inputs.duration == '4' && 240 || github.event.inputs.duration == '5' && 300 || 360 }}
-  KEEP_ALIVE_COUNT: ${{ github.event.inputs.duration == '1' && 12 || github.event.inputs.duration == '2' && 24 || github.event.inputs.duration == '3' && 36 || github.event.inputs.duration == '4' && 48 || github.event.inputs.duration == '5' && 60 || 72 }}
 
 jobs:
   rdp:
-    runs-on: ${{ 
-      github.event.inputs.windows_version == 'windows-11-gaming' && 'windows-latest' ||
-      github.event.inputs.windows_version == 'windows-11-pro' && 'windows-latest' ||
-      github.event.inputs.windows_version == 'windows-10-pro' && 'windows-2019' ||
-      github.event.inputs.windows_version == 'windows-10-22h2' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-8-pro' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-7-pro' && 'windows-2022'
-    }}
-    timeout-minutes: ${{ env.DURATION_MINUTES }}
+    runs-on: windows-latest
+    timeout-minutes: 360
     steps:
-      # ==========================================
-      # 1. CLEANUP
-      # ==========================================
-      - name: Cleanup & Prepare
+      - name: Cleanup
         run: |
           Write-Host "========================================"
-          Write-Host "  KHEN RDP ULTIMATE"
+          Write-Host "  KHEN RDP"
           Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
           Write-Host "  Save Data: ${{ github.event.inputs.save_data }}"
           Write-Host "  Durasi: ${{ github.event.inputs.duration }} jam"
@@ -82,9 +70,6 @@ jobs:
           [System.GC]::Collect()
           Write-Host "✅ Cleanup done"
 
-      # ==========================================
-      # 2. RESTORE DATA
-      # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
         id: cache
@@ -103,9 +88,6 @@ jobs:
           path: ${{ env.DATA_PATH }}
         continue-on-error: true
 
-      # ==========================================
-      # 3. SYSTEM INFO
-      # ==========================================
       - name: System Info
         run: |
           Write-Host "========================================"
@@ -121,101 +103,47 @@ jobs:
           Get-PSDrive C
           Write-Host "========================================"
 
-      # ==========================================
-      # 4. GAMING OPTIMIZATION
-      # ==========================================
       - name: Gaming Optimization
         run: |
           Write-Host "========================================"
           Write-Host "  GAMING OPTIMIZATION"
           Write-Host "========================================"
           
-          # High Performance Power Plan
           powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-          
-          # Game Mode ON
           reg add "HKCU\Software\Microsoft\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f
           reg add "HKCU\Software\Microsoft\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f
-          
-          # GPU Hardware Scheduling
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f
-          
-          # GPU Priority for Games
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v GPU Priority /t REG_DWORD /d 8 /f
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v Priority /t REG_DWORD /d 6 /f
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f
-          
-          # Disable Visual Effects
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f
           reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f
-          reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 0 /f
           reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
-          
           Write-Host "✅ Gaming Optimization applied"
 
-      # ==========================================
-      # 5. INSTALL RENDER ENGINE
-      # ==========================================
-      - name: Install Render Engine
-        run: |
-          Write-Host "========================================"
-          Write-Host "  INSTALL RENDER ENGINE"
-          Write-Host "========================================"
-          choco install directx -y 2>$null
-          choco install vulkan-runtime -y 2>$null
-          choco install opengl -y 2>$null
-          choco install vcredist-all -y 2>$null
-          choco install gpu-z -y 2>$null
-          Write-Host "✅ Render engine installed"
-
-      # ==========================================
-      # 6. SETUP RDP
-      # ==========================================
       - name: Setup RDP
         run: |
           Write-Host "========================================"
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
           
-          # Enable RDP
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxIdleTime /t REG_DWORD /d 0 /f
-          
-          # 64BIT COLOR
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v ColorDepth /t REG_DWORD /d 5 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnable64BitColor /t REG_DWORD /d 1 /f
-          
-          # GPU Acceleration
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableWddmDriver /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFx /t REG_DWORD /d 1 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFXAdvanced /t REG_DWORD /d 1 /f
-          
-          # H.264 + HEVC
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableH264 /t REG_DWORD /d 1 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableHEVC /t REG_DWORD /d 1 /f
           
-          # UDP + Compression
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fUseUDP /t REG_DWORD /d 1 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v CompressionLevel /t REG_DWORD /d 2 /f
-          
-          # Firewall
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           netsh advfirewall firewall add rule name="RDP-UDP" dir=in action=allow protocol=UDP localport=3389
-          netsh advfirewall firewall add rule name="Steam" dir=in action=allow protocol=TCP localport=27015-27030
-          netsh advfirewall firewall add rule name="Game" dir=in action=allow protocol=TCP localport=27000-27050
           
-          # Create user
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
           
-          # Setup data
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -225,35 +153,26 @@ jobs:
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\SaveGames
           
-          # Setup gaming
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Steam
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Epic
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\GOG
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Rockstar
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Minecraft
-          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Mods
-          New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Saves
           
-          # Redirect user folders
           $userPath = "C:\Users\${{ env.RDP_USER }}"
-          if (-not (Test-Path $userPath)) {
-            New-Item -ItemType Directory -Force -Path $userPath
-          }
+          if (-not (Test-Path $userPath)) { New-Item -ItemType Directory -Force -Path $userPath }
           
           $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','SaveGames')
           foreach ($folder in $folders) {
             $target = "${{ env.DATA_PATH }}\$folder"
-            if (Test-Path "$userPath\$folder") {
-              Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue
-            }
+            if (Test-Path "$userPath\$folder") { Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue }
             cmd /c mklink /J "$userPath\$folder" "$target"
           }
           
-          # Config
           $config = @"
           ============================================================
-          KHEN RDP ULTIMATE
+          KHEN RDP
           ============================================================
           USER      : ${{ env.RDP_USER }}
           PASS      : ${{ env.RDP_PASS }}
@@ -263,22 +182,17 @@ jobs:
           BACKUP    : ${{ github.event.inputs.save_data }}
           DURASI    : ${{ github.event.inputs.duration }} jam
           STATUS    : ONLINE
-          RENDER    : Vulkan | OpenGL | DirectX
-          COLOR     : 64-BIT
           ============================================================
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
           
           Write-Host ""
           Write-Host "========================================"
-          Write-Host "  RDP GAMING ACTIVE"
+          Write-Host "  RDP ACTIVE"
           Write-Host "========================================"
           Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
           Write-Host "========================================"
 
-      # ==========================================
-      # 7. TAILSCALE VPN
-      # ==========================================
       - name: Install Tailscale
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
@@ -330,51 +244,22 @@ jobs:
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
 
-      # ==========================================
-      # 8. KEEP ALIVE
-      # ==========================================
-      - name: Keep Alive & Auto Check
+      - name: Keep Alive
         run: |
           Write-Host "========================================"
-          Write-Host "  KHEN RDP ULTIMATE AKTIF"
+          Write-Host "  KHEN RDP AKTIF"
           Write-Host "========================================"
-          Write-Host ""
-          Write-Host "  AKSES RDP:"
-          Write-Host ""
-          Write-Host "     Host: (Tailscale IP dari log di atas)"
-          Write-Host "     User: ${{ env.RDP_USER }}"
-          Write-Host "     Pass: ${{ env.RDP_PASS }}"
-          Write-Host ""
-          Write-Host "  Data   : ${{ env.DATA_PATH }} (PERMANEN)"
-          Write-Host "  Games  : ${{ env.GAMING_PATH }} (PERMANEN)"
-          Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
-          Write-Host "  Durasi : ${{ github.event.inputs.duration }} jam"
-          Write-Host ""
+          Write-Host "  Host: (Tailscale IP dari log di atas)"
+          Write-Host "  User: KhenzOfficial"
+          Write-Host "  Pass: KhenzDev#12"
           Write-Host "========================================"
-          
           $counter = 0
-          $max = ${{ env.KEEP_ALIVE_COUNT }}
-          while ($counter -lt $max) {
+          while ($counter -lt 72) {
             $counter++
-            $time = Get-Date -Format "HH:mm:ss"
-            Write-Host "[$time] KHEN RDP ACTIVE $counter/$max"
-            
-            if ($counter % 3 -eq 0) {
-              $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
-              $ram = Get-WmiObject -Class Win32_OperatingSystem
-              $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
-              $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
-              $disk = Get-PSDrive C
-              $diskFree = [math]::Round($disk.Free / 1GB, 2)
-              Write-Host "[$time] AUTO CHECK: CPU=$cpu% | RAM=$ramUsed/$ramTotal GB | DISK=$diskFree GB free"
-            }
-            
+            Write-Host "$(Get-Date) - KHEN RDP ACTIVE"
             Start-Sleep -Seconds 300
           }
 
-      # ==========================================
-      # 9. BACKUP
-      # ==========================================
       - name: Upload Backup
         if: env.BACKUP_ENABLED == 'true'
         uses: actions/upload-artifact@v4
@@ -392,21 +277,9 @@ jobs:
           Write-Host "Save Data = ${{ github.event.inputs.save_data }}"
           Write-Host "========================================"
 
-      # ==========================================
-      # 10. AUTO RESTART
-      # ==========================================
       - name: Trigger Next Run
         if: always()
         run: |
-          $body = @{
-            ref = "main"
-            inputs = @{
-              windows_version = "${{ github.event.inputs.windows_version }}"
-              save_data = "${{ github.event.inputs.save_data }}"
-              duration = "${{ github.event.inputs.duration }}"
-            }
-          } | ConvertTo-Json -Depth 3
-          
           try {
             Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen.yml/dispatches" `
               -Method Post `
@@ -414,7 +287,7 @@ jobs:
                 "Authorization" = "token ${{ secrets.PAT_TOKEN }}"
                 "Accept" = "application/vnd.github.v3+json"
               } `
-              -Body $body `
+              -Body '{"ref":"main"}' `
               -ContentType "application/json"
             Write-Host "✅ Next run triggered"
           } catch {
