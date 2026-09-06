@@ -100,7 +100,7 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # 4. GAMING OPTIMIZATION
+      # 4. GAMING OPTIMIZATION (BIAR GAK LAG)
       # ==========================================
       - name: Gaming Optimization
         run: |
@@ -131,6 +131,11 @@ jobs:
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
+          
+          # Network Optimizer
+          netsh int tcp set global autotuninglevel=normal
+          reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /v TcpAckFrequency /t REG_DWORD /d 1 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /v TCPNoDelay /t REG_DWORD /d 1 /f
           
           Write-Host "✅ Gaming Optimization applied"
 
@@ -202,7 +207,7 @@ jobs:
           WINDOWS   : ${{ github.event.inputs.windows_version }}
           BACKUP    : ${{ github.event.inputs.save_data }}
           STATUS    : ONLINE
-          OPTIMASI  : Gaming Mode, FPS Boost, GPU Priority
+          OPTIMASI  : Gaming Mode, FPS Boost, GPU Priority, Network Optimizer
           ============================================================
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
@@ -289,7 +294,7 @@ jobs:
       # ==========================================
       # 8. KEEP ALIVE
       # ==========================================
-      - name: Keep Alive
+      - name: Keep Alive & Auto Check
         run: |
           Write-Host "========================================"
           Write-Host "  KHEN RDP ULTIMATE AKTIF"
@@ -315,6 +320,18 @@ jobs:
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
             Write-Host "[$time] KHEN RDP ACTIVE $counter"
+            
+            # Auto check tiap 15 menit
+            if ($counter % 3 -eq 0) {
+              $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
+              $ram = Get-WmiObject -Class Win32_OperatingSystem
+              $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
+              $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
+              $disk = Get-PSDrive C
+              $diskFree = [math]::Round($disk.Free / 1GB, 2)
+              Write-Host "[$time] AUTO CHECK: CPU=$cpu% | RAM=$ramUsed/$ramTotal GB | DISK=$diskFree GB free"
+            }
+            
             Start-Sleep -Seconds 300
           }
 
