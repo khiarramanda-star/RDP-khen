@@ -246,6 +246,6 @@ jobs:
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/windows.yml/dispatches \
           -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
