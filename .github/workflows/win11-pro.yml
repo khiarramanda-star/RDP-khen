@@ -1,4 +1,4 @@
-name: KHEN RDP
+name: KHEN RDP - Dual Tunnel
 on:
   workflow_dispatch:
     inputs:
@@ -12,14 +12,14 @@ on:
           - windows-2022
           - windows-2019
           - windows-2016
-      tunnel:
-        description: 'Pilih Tunnel'
+      primary_tunnel:
+        description: 'Pilih tunnel utama'
         required: true
-        default: 'cloudflare'
+        default: 'tailscale'
         type: choice
         options:
+          - tailscale
           - cloudflare
-          - zerotier
       backup:
         description: 'Aktifkan Backup?'
         required: true
@@ -42,20 +42,32 @@ env:
   ZT_NETWORK: 743993800fc54708
   DATA_PATH: C:\khen-data
   BACKUP_ENABLED: ${{ github.event.inputs.backup == 'yes' }}
+  PRIMARY_TUNNEL: ${{ github.event.inputs.primary_tunnel || 'tailscale' }}
 
 jobs:
   rdp:
     runs-on: ${{ github.event.inputs.version || 'windows-latest' }}
     timeout-minutes: 350
     steps:
+      # ==========================================
+      # 1. CLEANUP
+      # ==========================================
       - name: Cleanup
         run: |
+          Write-Host "========================================"
+          Write-Host "  CLEANUP & PREPARE"
+          Write-Host "========================================"
+          
           Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
+          
           Write-Host "✅ Cleanup done"
 
+      # ==========================================
+      # 2. RESTORE DATA
+      # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
         id: cache
@@ -72,35 +84,55 @@ jobs:
           path: ${{ env.DATA_PATH }}
         continue-on-error: true
 
+      # ==========================================
+      # 3. SYSTEM INFO
+      # ==========================================
       - name: System Info
         run: |
           Write-Host "========================================"
           Write-Host "  SYSTEM INFO"
           Write-Host "========================================"
-          Write-Host "Version  : ${{ github.event.inputs.version || 'schedule' }}"
-          Write-Host "Tunnel   : ${{ github.event.inputs.tunnel }}"
-          Write-Host "Backup   : ${{ github.event.inputs.backup }}"
+          Write-Host "Version        : ${{ github.event.inputs.version || 'schedule' }}"
+          Write-Host "Primary Tunnel : ${{ env.PRIMARY_TUNNEL }}"
+          Write-Host "Backup         : ${{ github.event.inputs.backup }}"
           Write-Host "========================================"
+          
+          Write-Host "OS:"
           Get-WmiObject -Class Win32_OperatingSystem
+          Write-Host "CPU:"
           Get-WmiObject -Class Win32_Processor
+          Write-Host "RAM:"
           Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
           Write-Host "========================================"
 
+      # ==========================================
+      # 4. SETUP RDP (FULL CONFIG)
+      # ==========================================
       - name: Setup RDP
         run: |
           Write-Host "========================================"
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
           
+          # Enable RDP via registry
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
+          
+          # Firewall rules
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          netsh advfirewall firewall add rule name="RDP-UDP" dir=in action=allow protocol=UDP localport=3389
           
+          # Create user with admin privileges
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
           
+          # Enable RDP session timeout
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxIdleTime /t REG_DWORD /d 0 /f
+          
+          # Setup persistent data folder
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -109,13 +141,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\AppData
           
+          # Redirect user folders to persistent storage
           $userPath = "C:\Users\${{ env.RDP_USER }}"
           if (-not (Test-Path $userPath)) {
             New-Item -ItemType Directory -Force -Path $userPath
           }
           
-          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects')
+          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects','AppData')
           foreach ($folder in $folders) {
             $target = "${{ env.DATA_PATH }}\$folder"
             if (Test-Path "$userPath\$folder") {
@@ -124,18 +158,20 @@ jobs:
             cmd /c mklink /J "$userPath\$folder" "$target"
           }
           
+          # Generate config file
           $config = @"
-          ╔═══════════════════════════════════════════════════╗
-          ║              KHEN RDP                            ║
-          ╠═══════════════════════════════════════════════════╣
-          ║ HOST      : ${{ env.RDP_DOMAIN }}:3389          ║
-          ║ USER      : ${{ env.RDP_USER }}                 ║
-          ║ PASS      : ${{ env.RDP_PASS }}                 ║
-          ║ DATA      : ${{ env.DATA_PATH }}                ║
-          ║ TUNNEL    : ${{ github.event.inputs.tunnel }}   ║
-          ║ BACKUP    : ${{ github.event.inputs.backup }}   ║
-          ║ STATUS    : ONLINE                              ║
-          ╚═══════════════════════════════════════════════════╝
+          ╔══════════════════════════════════════════════════════════════╗
+          ║                    KHEN RDP - DUAL TUNNEL                   ║
+          ╠══════════════════════════════════════════════════════════════╣
+          ║ HOST      : ${{ env.RDP_DOMAIN }}:3389                     ║
+          ║ USER      : ${{ env.RDP_USER }}                            ║
+          ║ PASS      : ${{ env.RDP_PASS }}                            ║
+          ║ DATA      : ${{ env.DATA_PATH }}                           ║
+          ║ PRIMARY   : ${{ env.PRIMARY_TUNNEL }}                      ║
+          ║ BACKUP    : ${{ github.event.inputs.backup }}              ║
+          ║ VERSION   : ${{ github.event.inputs.version }}             ║
+          ║ STATUS    : ONLINE                                         ║
+          ╚══════════════════════════════════════════════════════════════╝
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
           
@@ -149,32 +185,113 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # CLOUDFLARE TUNNEL (FIXED)
+      # 5. TAILSCALE VPN (PRIMARY)
+      # ==========================================
+      - name: Tailscale VPN
+        if: env.PRIMARY_TUNNEL == 'tailscale'
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+        run: |
+          Write-Host "========================================"
+          Write-Host "  TAILSCALE VPN (PRIMARY)"
+          Write-Host "========================================"
+          
+          if (-not $env:TS_AUTHKEY) {
+            Write-Host "❌ ERROR: TS_AUTHKEY not set!"
+            Write-Host "🔑 Dapatkan key di: https://login.tailscale.com/admin/authkeys"
+            Write-Host "⚠️  Pilih Reusable + Never Expire"
+            exit 1
+          }
+          
+          Write-Host "✅ Auth key ditemukan (length: $($env:TS_AUTHKEY.Length))"
+          
+          Write-Host "🔄 Downloading Tailscale installer..."
+          curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
+          
+          if (-not (Test-Path tailscale.msi)) {
+            Write-Host "❌ Download Tailscale gagal!"
+            Write-Host "⚠️  Coba lagi nanti atau cek koneksi"
+            exit 1
+          }
+          
+          Write-Host "🔄 Installing Tailscale..."
+          msiexec /i tailscale.msi /quiet /norestart
+          Start-Sleep -Seconds 15
+          
+          # Verify installation
+          $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+          if (-not (Test-Path $tsPath)) {
+            Write-Host "❌ Tailscale installation failed!"
+            Write-Host "⚠️  Coba install manual atau cek log"
+            exit 1
+          }
+          
+          Write-Host "🔄 Logging in to Tailscale..."
+          & $tsPath login --auth-key $env:TS_AUTHKEY
+          Start-Sleep -Seconds 5
+          
+          Write-Host "🔄 Getting Tailscale IP..."
+          $ip = & $tsPath ip
+          
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "  ✅ TAILSCALE ACTIVE"
+          Write-Host "========================================"
+          Write-Host "IP   : $ip"
+          Write-Host "USER : ${{ env.RDP_USER }}"
+          Write-Host "PASS : ${{ env.RDP_PASS }}"
+          Write-Host "========================================"
+          Write-Host "🔑  Akses RDP pake IP di atas"
+          Write-Host "========================================"
+
+      # ==========================================
+      # 6. CLOUDFLARE TUNNEL (ALTERNATIVE)
       # ==========================================
       - name: Cloudflare Tunnel
-        if: github.event.inputs.tunnel == 'cloudflare'
+        if: env.PRIMARY_TUNNEL == 'cloudflare'
         env:
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
         run: |
           Write-Host "========================================"
-          Write-Host "  CLOUDFLARE TUNNEL"
+          Write-Host "  CLOUDFLARE TUNNEL (ALTERNATIVE)"
           Write-Host "========================================"
           
           if (-not $env:CLOUDFLARE_TUNNEL_TOKEN) {
             Write-Host "❌ ERROR: CLOUDFLARE_TUNNEL_TOKEN not set!"
             Write-Host "⚠️  Tambah secret di Settings → Secrets → Actions"
+            Write-Host "🔑  Token format: cfut_... atau eyJh..."
             exit 1
           }
           
           Write-Host "✅ Token ditemukan (length: $($env:CLOUDFLARE_TUNNEL_TOKEN.Length))"
           
+          Write-Host "🔄 Downloading cloudflared..."
           curl.exe -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
           
+          if (-not (Test-Path cloudflared.exe)) {
+            Write-Host "❌ Gagal download cloudflared!"
+            exit 1
+          }
+          
           Write-Host "🔄 Starting Cloudflare Tunnel..."
-          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CLOUDFLARE_TUNNEL_TOKEN" -WindowStyle Hidden -PassThru
           
-          Start-Sleep -Seconds 10
+          # Use ProcessStartInfo for better control
+          $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+          $pinfo.FileName = ".\cloudflared.exe"
+          $pinfo.Arguments = "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CLOUDFLARE_TUNNEL_TOKEN"
+          $pinfo.RedirectStandardOutput = $true
+          $pinfo.RedirectStandardError = $true
+          $pinfo.UseShellExecute = $false
+          $pinfo.CreateNoWindow = $true
           
+          $p = New-Object System.Diagnostics.Process
+          $p.StartInfo = $pinfo
+          $p.Start() | Out-Null
+          
+          Write-Host "⏳ Waiting for tunnel to establish (15 seconds)..."
+          Start-Sleep -Seconds 15
+          
+          # Verify process is running
           $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
           if ($running) {
             Write-Host ""
@@ -186,72 +303,28 @@ jobs:
             Write-Host "PASS   : ${{ env.RDP_PASS }}"
             Write-Host "========================================"
             Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
+            Write-Host "⚠️  Proxy Cloudflare harus OFF (DNS only)"
             Write-Host "========================================"
           } else {
-            Write-Host "❌ Cloudflare Tunnel gagal start!"
+            Write-Host ""
+            Write-Host "========================================"
+            Write-Host "  ❌ CLOUDFLARE TUNNEL GAGAL!"
+            Write-Host "========================================"
             Write-Host ""
             Write-Host "📌 SOLUSI:"
             Write-Host "1. Hapus tunnel lama di dashboard Cloudflare"
             Write-Host "2. Buat tunnel baru dengan domain rdp.xzen.my.id"
             Write-Host "3. Copy token BARU (jangan pake token lama)"
             Write-Host "4. Update secret CLOUDFLARE_TUNNEL_TOKEN"
+            Write-Host "5. Run workflow lagi"
+            Write-Host ""
+            Write-Host "🔑 Token format: cfut_... atau eyJh..."
             Write-Host "========================================"
             exit 1
           }
 
       # ==========================================
-      # ZEROTIER VPN
-      # ==========================================
-      - name: ZeroTier VPN
-        if: github.event.inputs.tunnel == 'zerotier'
-        run: |
-          Write-Host "========================================"
-          Write-Host "  ZEROTIER VPN"
-          Write-Host "========================================"
-          
-          curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
-          if (-not (Test-Path ZeroTier.msi)) {
-            Write-Host "⚠️ Download gagal, skip VPN..."
-            exit 0
-          }
-          
-          msiexec /i ZeroTier.msi /quiet /norestart
-          Start-Sleep -Seconds 15
-          
-          $ztPaths = @(
-            "C:\Program Files\ZeroTier\One\zerotier-one.exe",
-            "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe"
-          )
-          $zt = $null
-          foreach ($p in $ztPaths) {
-            if (Test-Path $p) {
-              $zt = $p
-              break
-            }
-          }
-          if (-not $zt) {
-            Write-Host "⚠️ ZeroTier not found, skip VPN..."
-            exit 0
-          }
-          
-          & $zt -q join ${{ env.ZT_NETWORK }}
-          Start-Sleep -Seconds 15
-          
-          $ip = & $zt -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
-          
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  ✅ ZEROTIER ACTIVE"
-          Write-Host "========================================"
-          Write-Host "IP   : $ip"
-          Write-Host "USER : ${{ env.RDP_USER }}"
-          Write-Host "PASS : ${{ env.RDP_PASS }}"
-          Write-Host "========================================"
-          Write-Host "⚠️  Buka ZeroTier Dashboard, Authorize device!"
-          Write-Host "========================================"
-
-      # ==========================================
-      # KEEP ALIVE & ACCESS INFO
+      # 7. KEEP ALIVE & ACCESS INFO (PROFESSIONAL)
       # ==========================================
       - name: Keep Alive & Access Info
         run: |
@@ -261,40 +334,48 @@ jobs:
           Write-Host ""
           Write-Host "  🖥️  AKSES RDP:"
           Write-Host ""
-          if ('${{ github.event.inputs.tunnel }}' -eq 'cloudflare') {
-            Write-Host "     Host: rdp.xzen.my.id:3389"
+          Write-Host "     Primary Tunnel : ${{ env.PRIMARY_TUNNEL }}"
+          if ('${{ env.PRIMARY_TUNNEL }}' -eq 'tailscale') {
+            Write-Host "     Host           : (Tailscale IP dari log di atas)"
           } else {
-            Write-Host "     Host: (Lihat IP ZeroTier di log di atas):3389"
+            Write-Host "     Host           : ${{ env.RDP_DOMAIN }}:3389"
           }
-          Write-Host "     User: ${{ env.RDP_USER }}"
-          Write-Host "     Pass: ${{ env.RDP_PASS }}"
+          Write-Host "     User           : ${{ env.RDP_USER }}"
+          Write-Host "     Pass           : ${{ env.RDP_PASS }}"
           Write-Host ""
           Write-Host "  📱 Windows App: Remote Desktop Connection (mstsc)"
-          Write-Host "  📱 HP: Microsoft Remote Desktop"
+          Write-Host "  📱 HP        : Microsoft Remote Desktop"
           Write-Host ""
-          Write-Host "  ⚡️ Tunnel : ${{ github.event.inputs.tunnel }}"
-          Write-Host "  ⚡️ Backup : ${{ github.event.inputs.backup }}"
-          Write-Host "  ⚡️ Version: ${{ github.event.inputs.version }}"
+          Write-Host "  ⚡️ Backup    : ${{ github.event.inputs.backup }}"
+          Write-Host "  ⚡️ Version   : ${{ github.event.inputs.version }}"
           Write-Host ""
+          Write-Host "========================================"
+          Write-Host "  ⏱️  KEEP ALIVE MONITOR"
           Write-Host "========================================"
           
           $counter = 0
+          $startTime = Get-Date
+          
           while ($true) {
             $counter++
-            $time = Get-Date -Format "HH:mm:ss"
+            $currentTime = Get-Date
+            $uptime = $currentTime - $startTime
+            $timeStr = $currentTime.ToString("HH:mm:ss")
             
+            # Backup setiap 30 menit (jika enabled)
             if ('${{ env.BACKUP_ENABLED }}' -eq 'true' -and ($counter % 6 -eq 0)) {
-              Write-Host "[$time] 📤 Creating backup..."
-              Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\khen-backup-$counter.zip -Force -ErrorAction SilentlyContinue
-              Write-Host "[$time] ✅ Backup created: C:\khen-backup-$counter.zip"
+              Write-Host "[$timeStr] 📤 Creating backup..."
+              $zipPath = "C:\khen-backup-$counter.zip"
+              Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath $zipPath -Force -ErrorAction SilentlyContinue
+              Write-Host "[$timeStr] ✅ Backup created: $zipPath"
             }
             
-            Write-Host "[$time] KHEN RDP ACTIVE #$counter"
+            Write-Host "[$timeStr] KHEN RDP ACTIVE #$counter | Uptime: $($uptime.ToString('hh\:mm\:ss'))"
             Start-Sleep -Seconds 300
           }
 
       # ==========================================
-      # BACKUP
+      # 8. BACKUP (CONDITIONAL)
       # ==========================================
       - name: Upload Backup
         if: env.BACKUP_ENABLED == 'true'
@@ -314,22 +395,26 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # TRIGGER NEXT RUN
+      # 9. TRIGGER NEXT RUN (AUTO RESTART)
       # ==========================================
       - name: Trigger Next Run
         if: always()
         run: |
+          Write-Host "========================================"
+          Write-Host "  TRIGGER NEXT RUN"
+          Write-Host "========================================"
+          
           $body = @{
             ref = "main"
             inputs = @{
               version = "${{ github.event.inputs.version }}"
-              tunnel = "${{ github.event.inputs.tunnel }}"
+              primary_tunnel = "${{ env.PRIMARY_TUNNEL }}"
               backup = "${{ github.event.inputs.backup }}"
             }
           } | ConvertTo-Json -Depth 3
           
           try {
-            Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches" `
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/win11-pro.yml/dispatches" `
               -Method Post `
               -Headers @{
                 "Authorization" = "token ${{ secrets.PAT_TOKEN }}"
@@ -337,8 +422,10 @@ jobs:
               } `
               -Body $body `
               -ContentType "application/json"
-            Write-Host "✅ Next run triggered"
+            
+            Write-Host "✅ Next run triggered successfully"
           } catch {
             Write-Host "⚠️ Gagal trigger: $($_.Exception.Message)"
+            Write-Host "ℹ️  Workflow akan tetap jalan sampai timeout (6 jam)"
           }
         continue-on-error: true
