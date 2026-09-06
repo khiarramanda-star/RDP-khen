@@ -1,4 +1,4 @@
-name: KHEN RDP - Dual Tunnel
+name: KHEN RDP - Tailscale
 on:
   workflow_dispatch:
     inputs:
@@ -15,7 +15,7 @@ on:
       backup:
         description: 'Aktifkan Backup?'
         required: true
-        default: 'no'
+        default: 'yes'
         type: choice
         options:
           - yes
@@ -30,12 +30,12 @@ permissions:
 env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
-  RDP_DOMAIN: rdp.xzen.my.id
   DATA_PATH: C:\khen-data
+  TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
 
 jobs:
   rdp:
-    runs-on: windows-latest
+    runs-on: ${{ github.event.inputs.version || 'windows-latest' }}
     timeout-minutes: 350
     steps:
       # ==========================================
@@ -43,14 +43,19 @@ jobs:
       # ==========================================
       - name: Cleanup
         run: |
+          Write-Host "========================================"
+          Write-Host "  CLEANUP & PREPARE"
+          Write-Host "========================================"
+          
           Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
+          
           Write-Host "✅ Cleanup done"
 
       # ==========================================
-      # 2. RESTORE DATA (CACHE)
+      # 2. RESTORE DATA
       # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
@@ -59,6 +64,14 @@ jobs:
           path: ${{ env.DATA_PATH }}
           key: khen-data-${{ github.run_id }}
           restore-keys: khen-data-
+
+      - name: Restore Artifact
+        if: github.event.inputs.backup == 'yes' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: khen-data-backup
+          path: ${{ env.DATA_PATH }}
+        continue-on-error: true
 
       # ==========================================
       # 3. SYSTEM INFO
@@ -70,6 +83,7 @@ jobs:
           Write-Host "========================================"
           Write-Host "Version : ${{ github.event.inputs.version || 'schedule' }}"
           Write-Host "Backup  : ${{ github.event.inputs.backup }}"
+          Write-Host "Tunnel  : TAILSCALE"
           Write-Host "========================================"
           Get-WmiObject -Class Win32_OperatingSystem
           Get-WmiObject -Class Win32_Processor
@@ -77,7 +91,7 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # 4. SETUP RDP
+      # 4. SETUP RDP (KOMPLIT)
       # ==========================================
       - name: Setup RDP
         run: |
@@ -85,15 +99,21 @@ jobs:
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
           
+          # Enable RDP
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
+          
+          # Firewall
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
           
+          # Create user
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
           
+          # Setup folders
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -101,13 +121,14 @@ jobs:
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
           
           $userPath = "C:\Users\${{ env.RDP_USER }}"
           if (-not (Test-Path $userPath)) {
             New-Item -ItemType Directory -Force -Path $userPath
           }
           
-          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos')
+          $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects')
           foreach ($folder in $folders) {
             $target = "${{ env.DATA_PATH }}\$folder"
             if (Test-Path "$userPath\$folder") {
@@ -116,16 +137,18 @@ jobs:
             cmd /c mklink /J "$userPath\$folder" "$target"
           }
           
+          # Config
           $config = @"
-          ╔═══════════════════════════════════════════╗
-          ║       KHEN RDP - DUAL TUNNEL             ║
-          ╠═══════════════════════════════════════════╣
-          ║ HOST   : ${{ env.RDP_DOMAIN }}:3389     ║
-          ║ USER   : ${{ env.RDP_USER }}             ║
-          ║ PASS   : ${{ env.RDP_PASS }}             ║
-          ║ BACKUP : ${{ github.event.inputs.backup }}║
-          ║ STATUS : ONLINE                          ║
-          ╚═══════════════════════════════════════════╝
+          ╔═══════════════════════════════════════════════════╗
+          ║              KHEN RDP - TAILSCALE                ║
+          ╠═══════════════════════════════════════════════════╣
+          ║ USER      : ${{ env.RDP_USER }}                 ║
+          ║ PASS      : ${{ env.RDP_PASS }}                 ║
+          ║ DATA      : ${{ env.DATA_PATH }}                ║
+          ║ VERSION   : ${{ github.event.inputs.version }}  ║
+          ║ BACKUP    : ${{ github.event.inputs.backup }}   ║
+          ║ STATUS    : ONLINE                              ║
+          ╚═══════════════════════════════════════════════════╝
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
           
@@ -139,7 +162,7 @@ jobs:
           Write-Host "========================================"
 
       # ==========================================
-      # 5. TAILSCALE VPN (DUAL)
+      # 5. TAILSCAPE VPN (DOANG)
       # ==========================================
       - name: Tailscale VPN
         env:
@@ -150,32 +173,40 @@ jobs:
           Write-Host "========================================"
           
           if (-not $env:TS_AUTHKEY) {
-            Write-Host "❌ TS_AUTHKEY not set! Skip Tailscale..."
-            Write-Host "⚠️  Kalo mau pake Tailscale, tambah secret TS_AUTHKEY"
-            exit 0
+            Write-Host "❌ ERROR: TS_AUTHKEY not set!"
+            Write-Host "🔑 Dapatkan key di: https://login.tailscale.com/admin/authkeys"
+            Write-Host "⚠️  Pilih Reusable + Never Expire"
+            exit 1
           }
           
-          Write-Host "✅ Auth key ditemukan"
+          Write-Host "✅ Auth key ditemukan (length: $($env:TS_AUTHKEY.Length))"
           
-          # Download & install
+          Write-Host "🔄 Downloading Tailscale installer..."
           curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
+          
           if (-not (Test-Path tailscale.msi)) {
-            Write-Host "❌ Download gagal!"
-            exit 0
+            Write-Host "❌ Download Tailscale gagal!"
+            Write-Host "⚠️  Coba lagi nanti atau cek koneksi"
+            exit 1
           }
           
+          Write-Host "🔄 Installing Tailscale..."
           msiexec /i tailscale.msi /quiet /norestart
           Start-Sleep -Seconds 15
           
+          # Verify installation
           $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
           if (-not (Test-Path $tsPath)) {
-            Write-Host "❌ Tailscale not found!"
-            exit 0
+            Write-Host "❌ Tailscale installation failed!"
+            Write-Host "⚠️  Coba install manual atau cek log"
+            exit 1
           }
           
+          Write-Host "🔄 Logging in to Tailscale..."
           & $tsPath login --auth-key $env:TS_AUTHKEY
           Start-Sleep -Seconds 5
           
+          Write-Host "🔄 Getting Tailscale IP..."
           $ip = & $tsPath ip
           
           Write-Host ""
@@ -186,44 +217,11 @@ jobs:
           Write-Host "USER : ${{ env.RDP_USER }}"
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
-          Write-Host "⚠️  Akses RDP pake IP Tailscale"
+          Write-Host "🔑  Akses RDP pake IP di atas"
           Write-Host "========================================"
 
       # ==========================================
-      # 6. CLOUDFLARE TUNNEL (DUAL)
-      # ==========================================
-      - name: Cloudflare Tunnel
-        env:
-          CF_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-        run: |
-          Write-Host "========================================"
-          Write-Host "  CLOUDFLARE TUNNEL"
-          Write-Host "========================================"
-          
-          if (-not $env:CF_TOKEN) {
-            Write-Host "❌ CLOUDFLARE_TUNNEL_TOKEN not set! Skip Cloudflare..."
-            Write-Host "⚠️  Kalo mau pake Cloudflare, tambah secret CLOUDFLARE_TUNNEL_TOKEN"
-            exit 0
-          }
-          
-          Write-Host "✅ Token ditemukan"
-          
-          curl.exe -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-          
-          Write-Host "🔄 Starting Cloudflare Tunnel..."
-          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
-          
-          Start-Sleep -Seconds 10
-          
-          $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
-          if ($running) {
-            Write-Host "✅ Cloudflare Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
-          } else {
-            Write-Host "⚠️ Cloudflare gagal, tapi Tailscale tetep jalan"
-          }
-
-      # ==========================================
-      # 7. KEEP ALIVE
+      # 6. KEEP ALIVE
       # ==========================================
       - name: Keep Alive
         run: |
@@ -233,10 +231,15 @@ jobs:
           Write-Host ""
           Write-Host "  🖥️  AKSES RDP:"
           Write-Host ""
-          Write-Host "     Host 1: rdp.xzen.my.id:3389 (Cloudflare)"
-          Write-Host "     Host 2: (IP Tailscale dari log di atas)"
-          Write-Host "     User : ${{ env.RDP_USER }}"
-          Write-Host "     Pass : ${{ env.RDP_PASS }}"
+          Write-Host "     Host: (Tailscale IP dari log di atas)"
+          Write-Host "     User: ${{ env.RDP_USER }}"
+          Write-Host "     Pass: ${{ env.RDP_PASS }}"
+          Write-Host ""
+          Write-Host "  📱 Windows App: Remote Desktop Connection (mstsc)"
+          Write-Host "  📱 HP: Microsoft Remote Desktop"
+          Write-Host ""
+          Write-Host "  ⚡️ Backup : ${{ github.event.inputs.backup }}"
+          Write-Host "  ⚡️ Version: ${{ github.event.inputs.version }}"
           Write-Host ""
           Write-Host "========================================"
           
@@ -244,6 +247,63 @@ jobs:
           while ($true) {
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
+            
+            if ('${{ github.event.inputs.backup }}' -eq 'yes' -and ($counter % 6 -eq 0)) {
+              Write-Host "[$time] 📤 Creating backup..."
+              $zipPath = "C:\khen-backup-$counter.zip"
+              Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath $zipPath -Force -ErrorAction SilentlyContinue
+              Write-Host "[$time] ✅ Backup created: $zipPath"
+            }
+            
             Write-Host "[$time] KHEN RDP ACTIVE #$counter"
             Start-Sleep -Seconds 300
           }
+
+      # ==========================================
+      # 7. BACKUP
+      # ==========================================
+      - name: Upload Backup
+        if: github.event.inputs.backup == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: khen-data-backup
+          path: ${{ env.DATA_PATH }}
+          retention-days: 90
+
+      - name: Upload Backup (Disabled)
+        if: github.event.inputs.backup == 'no'
+        run: |
+          Write-Host "========================================"
+          Write-Host "  SKIP BACKUP"
+          Write-Host "========================================"
+          Write-Host "ℹ️ BACKUP = ${{ github.event.inputs.backup }}, skip"
+          Write-Host "========================================"
+
+      # ==========================================
+      # 8. TRIGGER NEXT RUN
+      # ==========================================
+      - name: Trigger Next Run
+        if: always()
+        run: |
+          $body = @{
+            ref = "main"
+            inputs = @{
+              version = "${{ github.event.inputs.version }}"
+              backup = "${{ github.event.inputs.backup }}"
+            }
+          } | ConvertTo-Json -Depth 3
+          
+          try {
+            Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-tailscale.yml/dispatches" `
+              -Method Post `
+              -Headers @{
+                "Authorization" = "token ${{ secrets.PAT_TOKEN }}"
+                "Accept" = "application/vnd.github.v3+json"
+              } `
+              -Body $body `
+              -ContentType "application/json"
+            Write-Host "✅ Next run triggered"
+          } catch {
+            Write-Host "⚠️ Gagal trigger: $($_.Exception.Message)"
+          }
+        continue-on-error: true
