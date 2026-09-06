@@ -1,126 +1,211 @@
-name: Windows 11 Pro Asli
+name: KHEN RDP - Pilih Windows
 on:
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Pilih Windows 11 yang mau dipake'
+        required: true
+        default: 'pro-ryzen'
+        type: choice
+        options:
+          - pro-ryzen
+          - arm-basic
+  schedule:
+    - cron: '0 */5 * * *'
 
 env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
+  DATA_PATH: C:\khen-data
 
 jobs:
-  win11:
-    runs-on: ubuntu-latest
+  rdp:
+    runs-on: ${{ github.event.inputs.version == 'arm-basic' && 'windows-11-arm' || 'windows-latest' }}
     timeout-minutes: 350
     
     steps:
-    - name: Install Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y qemu-system-x86 qemu-utils wget curl unzip \
-          libvirt-daemon-system libvirt-clients bridge-utils virt-manager \
-          xvfb x11vnc novnc websockify tigervnc-standalone-server
-        
-        # Setup VNC buat akses sebelum RDP
-        sudo systemctl start dbus
-        echo "Dependencies installed"
+    # ===== RESTORE DATA (CACHE) =====
+    - name: Restore Data dari Cache
+      uses: actions/cache@v4
+      id: cache
+      with:
+        path: ${{ env.DATA_PATH }}
+        key: khen-data-${{ github.run_id }}
+        restore-keys: |
+          khen-data-
     
-    - name: Download Windows 11 Pro ISO
+    # ===== RESTORE DARI ARTIFACT (KALO CACHE KOSONG) =====
+    - name: Restore dari Artifact
+      uses: actions/download-artifact@v4
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        name: khen-data-backup
+        path: ${{ env.DATA_PATH }}
+      continue-on-error: true
+    
+    # ===== RESTORE DARI GOOGLE DRIVE (KALO SEMUA KOSONG) =====
+    - name: Setup Rclone & Restore dari Google Drive
+      uses: AnimMouse/setup-rclone@v1
+      continue-on-error: true
+      with:
+        rclone_conf: ${{ secrets.RCLONE_CONF }}
+    
+    - name: Restore dari Google Drive
+      continue-on-error: true
       run: |
-        # Download ISO Windows 11 Pro dari Microsoft (official)
-        wget -O win11.iso "https://software.download.prss.microsoft.com/db/Win11_23H2_English_x64v2.iso?t=8a7f3b2c-1d4e-5f6a-7b8c-9d0e1f2a3b4c&e=1735689600&h=abc123def456" || {
-          echo "Download gagal, pake backup link..."
-          wget -O win11.iso "https://archive.org/download/Win11_23H2_English_x64/Win11_23H2_English_x64.iso"
+        mkdir ${{ env.DATA_PATH }} -Force
+        rclone copy gdrive:khen-data ${{ env.DATA_PATH }} --verbose
+        Write-Host "Data restored from Google Drive"
+    
+    # ===== INFO SPESIFIKASI =====
+    - name: Info Spesifikasi
+      run: |
+        Write-Host "========================================"
+        Write-Host "  KHEN RDP - ${{ github.event.inputs.version }}"
+        Write-Host "========================================"
+        Write-Host "CPU:"
+        Get-WmiObject -Class Win32_Processor
+        Write-Host "RAM:"
+        Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+        Write-Host "========================================"
+        Write-Host "DATA PATH: ${{ env.DATA_PATH }}"
+        if (Test-Path "${{ env.DATA_PATH }}") {
+          Write-Host "DATA SIZE: $((Get-ChildItem -Path ${{ env.DATA_PATH }} -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB) MB"
+        } else {
+          Write-Host "DATA: Belum ada, akan dibuat baru"
+        }
+        Write-Host "========================================"
+    
+    # ===== SETUP RDP =====
+    - name: Setup RDP
+      run: |
+        # Enable RDP
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 1
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        
+        # Cek user sudah ada atau belum
+        $userExists = net user ${{ env.RDP_USER }} 2>&1 | Select-String "User name"
+        if ($userExists) {
+          Write-Host "User ${{ env.RDP_USER }} sudah ada, skip create"
+        } else {
+          net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
+          net localgroup "Administrators" ${{ env.RDP_USER }} /add
+          net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
+          Write-Host "User ${{ env.RDP_USER }} created"
         }
         
-        # Download VirtIO drivers (buat disk)
-        wget -O virtio.iso "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
+        # Setup folder data
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Downloads
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
         
-        # Download autounattend.xml (unattended installation)
-        curl -s -o autounattend.xml "https://raw.githubusercontent.com/microsoft/windows-dev-box-setup-scripts/main/autounattend.xml"
+        # Redirect user folders ke DATA_PATH
+        $userPath = "C:\Users\${{ env.RDP_USER }}"
+        if (!(Test-Path "$userPath\Desktop")) {
+          cmd /c mklink /J "$userPath\Desktop" "${{ env.DATA_PATH }}\Desktop" 2>$null
+        }
+        if (!(Test-Path "$userPath\Documents")) {
+          cmd /c mklink /J "$userPath\Documents" "${{ env.DATA_PATH }}\Documents" 2>$null
+        }
+        if (!(Test-Path "$userPath\Downloads")) {
+          cmd /c mklink /J "$userPath\Downloads" "${{ env.DATA_PATH }}\Downloads" 2>$null
+        }
+        if (!(Test-Path "$userPath\Pictures")) {
+          cmd /c mklink /J "$userPath\Pictures" "${{ env.DATA_PATH }}\Pictures" 2>$null
+        }
+        if (!(Test-Path "$userPath\Music")) {
+          cmd /c mklink /J "$userPath\Music" "${{ env.DATA_PATH }}\Music" 2>$null
+        }
+        if (!(Test-Path "$userPath\Videos")) {
+          cmd /c mklink /J "$userPath\Videos" "${{ env.DATA_PATH }}\Videos" 2>$null
+        }
         
-        echo "ISO downloaded: $(ls -lh win11.iso)"
-    
-    - name: Create QEMU Disk
-      run: |
-        # Create 64GB disk image
-        qemu-img create -f qcow2 win11.qcow2 64G
-        echo "Disk created"
-    
-    - name: Start Windows 11 Pro VM
-      run: |
-        # Jalankan QEMU dengan VNC + RDP port forwarding
-        qemu-system-x86_64 \
-          -name "Windows 11 Pro" \
-          -machine q35,accel=tcg \
-          -cpu qemu64 \
-          -smp cores=2,threads=1,sockets=1 \
-          -m 4G \
-          -drive file=win11.qcow2,format=qcow2,if=virtio \
-          -drive file=win11.iso,media=cdrom,if=ide \
-          -drive file=virtio.iso,media=cdrom,if=ide \
-          -device e1000,netdev=net0 \
-          -netdev user,id=net0,hostfwd=tcp::3389-:3389,hostfwd=tcp::5900-:5900 \
-          -vnc :0 \
-          -daemonize
-        
-        echo "VM started, waiting for Windows 11 installation..."
-        sleep 60
-        
-        # Cek status
-        ps aux | grep qemu
+        # Simpan config
+        @"
+        ╔═══════════════════════════════════════════╗
+        ║       KHEN RDP SYSTEM ACTIVE             ║
+        ╠═══════════════════════════════════════════╣
+        ║ HOST   : ${{ env.RDP_DOMAIN }}           ║
+        ║ USER   : ${{ env.RDP_USER }}             ║
+        ║ PASS   : ${{ env.RDP_PASS }}             ║
+        ║ DATA   : ${{ env.DATA_PATH }}            ║
+        ║ VERSION: ${{ github.event.inputs.version }} ║
+        ║ STATUS : ONLINE                          ║
+        ╚═══════════════════════════════════════════╝
+        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
         Write-Host ""
         Write-Host "========================================"
-        Write-Host "  WINDOWS 11 PRO INSTALLING"
+        Write-Host "  KHEN RDP ACTIVE"
         Write-Host "========================================"
-        Write-Host "RDP akan aktif setelah install selesai"
-        Write-Host "Proses install bisa memakan waktu 30-60 menit"
+        Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
+        Write-Host "========================================"
+        Write-Host "DATA AMAN! Tidak hilang walau restart"
         Write-Host "========================================"
     
-    - name: Setup Cloudflare Tunnel (RDP)
+    # ===== CLOUDFLARE TUNNEL =====
+    - name: Cloudflare Tunnel
       env:
         CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
       run: |
-        curl -s -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-        chmod +x cloudflared
+        curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+        echo $env:CF_TOKEN | .\cloudflared.exe tunnel login 2>&1 | Out-Null
+        .\cloudflared.exe tunnel delete khen-rdp -f 2>&1 | Out-Null
+        .\cloudflared.exe tunnel create khen-rdp 2>&1 | Out-Null
+        .\cloudflared.exe tunnel route dns khen-rdp ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
         
-        echo $CF_TOKEN | ./cloudflared tunnel login || true
+        $credFile = Get-ChildItem C:\Users\runneradmin\.cloudflared\*.json | Select-Object -First 1
         
-        ./cloudflared tunnel delete win11-pro -f 2>/dev/null || true
-        ./cloudflared tunnel create win11-pro 2>/dev/null || true
-        ./cloudflared tunnel route dns win11-pro ${{ env.RDP_DOMAIN }} 2>/dev/null || true
+        @"
+        tunnel: khen-rdp
+        credentials-file: $($credFile.FullName)
+        ingress:
+          - hostname: ${{ env.RDP_DOMAIN }}
+            service: tcp://localhost:3389
+          - service: http_status:404
+        "@ | Out-File C:\Users\runneradmin\.cloudflared\config.yml -Force
         
-        nohup ./cloudflared tunnel run --url tcp://localhost:3389 win11-pro > tunnel.log 2>&1 &
+        Start-Process ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-rdp" -WindowStyle Hidden -PassThru
         
-        sleep 10
-        echo "Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+        Write-Host "Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
     
-    - name: Setup VNC Web Access (Alternatif)
+    # ===== KEEP ALIVE =====
+    - name: Keep Alive & Backup Otomatis
       run: |
-        # Web VNC via novnc (akses dari browser)
-        git clone https://github.com/novnc/noVNC.git
-        cd noVNC
-        nohup ./utils/novnc_proxy --vnc localhost:5900 --listen 8080 > vnc.log 2>&1 &
-        
-        sleep 5
-        echo "VNC Web available at: http://localhost:8080/vnc.html"
+        while ($true) {
+          $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          "$time - KHEN RDP ${{ github.event.inputs.version }} ACTIVE" | Out-File -FilePath "${{ env.DATA_PATH }}\heartbeat.txt" -Append
+          Write-Host "[$time] KHEN RDP ACTIVE"
+          Start-Sleep -Seconds 300
+        }
     
-    - name: Keep Alive & Monitor
+    # ===== UPLOAD BACKUP KE ARTIFACT =====
+    - name: Upload Backup ke Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: khen-data-backup
+        path: ${{ env.DATA_PATH }}
+        retention-days: 90
+    
+    # ===== UPLOAD BACKUP KE GOOGLE DRIVE =====
+    - name: Upload Backup ke Google Drive
+      continue-on-error: true
       run: |
-        echo "========================================"
-        echo "  WINDOWS 11 PRO ASLI"
-        echo "========================================"
-        echo "AKSES RDP: rdp.xzen.my.id"
-        echo "USER: KhenzOfficial"
-        echo "PASS: KhenzDev#12"
-        echo "========================================"
-        echo "VNC Web: http://localhost:8080/vnc.html"
-        echo "========================================"
-        
-        # Loop keepalive
-        while true; do
-          echo "$(date) - Windows 11 Pro Asli Running"
-          sleep 300
-        done
+        rclone copy ${{ env.DATA_PATH }} gdrive:khen-data --verbose
+        Write-Host "Data backed up to Google Drive"
+    
+    # ===== TRIGGER NEXT RUN =====
+    - name: Trigger Next Run
+      run: |
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen.yml/dispatches \
+          -d '{"ref":"main", "inputs": {"version": "${{ github.event.inputs.version }}"}}'
+      continue-on-error: true
