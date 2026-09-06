@@ -1,4 +1,4 @@
-name: KHEN RDP FINAL
+name: KHEN RDP ULTIMATE
 on:
   workflow_dispatch:
     inputs:
@@ -31,7 +31,7 @@ jobs:
     - name: Prepare Environment
       run: |
         Write-Host "========================================"
-        Write-Host "  KHEN RDP FINAL"
+        Write-Host "  KHEN RDP ULTIMATE"
         Write-Host "  Version: ${{ github.event.inputs.version }}"
         Write-Host "========================================"
         
@@ -138,7 +138,7 @@ jobs:
         # Config
         @"
         ╔═══════════════════════════════════════════════════╗
-        ║              KHEN RDP FINAL                      ║
+        ║              KHEN RDP ULTIMATE                   ║
         ╠═══════════════════════════════════════════════════╣
         ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
         ║ USER      : ${{ env.RDP_USER }}                 ║
@@ -159,46 +159,17 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 6. CLOUDFLARE TUNNEL (FIXED)
+    # 6. CLOUDFLARE TUNNEL (PAKE TOKEN cfut_)
     # ==========================================
     - name: Cloudflare Tunnel
       env:
-        CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+        CF_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
       run: |
         # Download cloudflared
         curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
         
-        # Login via token
-        echo $env:CF_TOKEN | .\cloudflared.exe tunnel login 2>&1 | Out-Null
-        Write-Host "✅ Login berhasil"
-        
-        # Hapus tunnel lama
-        .\cloudflared.exe tunnel delete khen-final -f 2>&1 | Out-Null
-        Write-Host "✅ Tunnel lama dihapus"
-        
-        # Buat tunnel baru
-        .\cloudflared.exe tunnel create khen-final 2>&1 | Out-Null
-        Write-Host "✅ Tunnel dibuat"
-        
-        # Route ke domain
-        .\cloudflared.exe tunnel route dns khen-final ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
-        Write-Host "✅ Route ke domain berhasil"
-        
-        # Cari credential
-        $credFile = Get-ChildItem C:\Users\runneradmin\.cloudflared\*.json | Select-Object -First 1
-        
-        # Config
-        @"
-        tunnel: khen-final
-        credentials-file: $($credFile.FullName)
-        ingress:
-          - hostname: ${{ env.RDP_DOMAIN }}
-            service: tcp://localhost:3389
-          - service: http_status:404
-        "@ | Out-File C:\Users\runneradmin\.cloudflared\config.yml -Force
-        
-        # Jalankan tunnel
-        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-final" -WindowStyle Hidden -PassThru
+        # Jalankan tunnel langsung pake token cfut_
+        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --token $env:CF_TUNNEL_TOKEN" -WindowStyle Hidden -PassThru
         
         Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
         Write-Host "⚠️  Tunggu 1-2 menit, DNS Cloudflare perlu propagate"
@@ -209,12 +180,12 @@ jobs:
     - name: Keep Alive
       run: |
         while ($true) {
-          Write-Host "$(Get-Date) - KHEN RDP FINAL ACTIVE"
+          Write-Host "$(Get-Date) - KHEN RDP ULTIMATE ACTIVE"
           Start-Sleep -Seconds 300
         }
     
     # ==========================================
-    # 8. BACKUP
+    # 8. BACKUP KE ARTIFACT
     # ==========================================
     - name: Upload Backup ke Artifact
       uses: actions/upload-artifact@v4
@@ -232,6 +203,6 @@ jobs:
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen-final.yml/dispatches \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen-ultimate.yml/dispatches \
           -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\"}}"
       continue-on-error: true
