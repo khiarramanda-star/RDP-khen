@@ -1,15 +1,23 @@
-name: KHEN RDP - Pilih Windows
+name: KHEN RDP ULTIMATE
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Pilih Windows 11 yang mau dipake'
+        description: 'Pilih versi Windows'
         required: true
         default: 'pro-ryzen'
         type: choice
         options:
           - pro-ryzen
           - arm-basic
+      storage:
+        description: 'Pake Google Drive?'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - yes
+          - no
   schedule:
     - cron: '0 */5 * * *'
 
@@ -18,6 +26,7 @@ env:
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
   DATA_PATH: C:\khen-data
+  BACKUP_PATH: D:\backup
 
 jobs:
   rdp:
@@ -25,8 +34,29 @@ jobs:
     timeout-minutes: 350
     
     steps:
-    # ===== RESTORE DATA (CACHE) =====
-    - name: Restore Data dari Cache
+    # ==========================================
+    # 1. PREPARATION & CLEANUP
+    # ==========================================
+    - name: Prepare Environment
+      run: |
+        Write-Host "========================================"
+        Write-Host "  KHEN RDP ULTIMATE - ${{ github.event.inputs.version }}"
+        Write-Host "========================================"
+        Write-Host "Storage : ${{ github.event.inputs.storage }}"
+        Write-Host "========================================"
+        
+        # Bersihin disk
+        Remove-Item -Path C:\Users\runneradmin\AppData\Local\Temp\* -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "Disk cleaned"
+    
+    # ==========================================
+    # 2. RESTORE DATA (CACHE PRIORITY)
+    # ==========================================
+    - name: Restore dari Cache
       uses: actions/cache@v4
       id: cache
       with:
@@ -35,7 +65,6 @@ jobs:
         restore-keys: |
           khen-data-
     
-    # ===== RESTORE DARI ARTIFACT (KALO CACHE KOSONG) =====
     - name: Restore dari Artifact
       uses: actions/download-artifact@v4
       if: steps.cache.outputs.cache-hit != 'true'
@@ -44,48 +73,57 @@ jobs:
         path: ${{ env.DATA_PATH }}
       continue-on-error: true
     
-    # ===== RESTORE DARI GOOGLE DRIVE (OPSIONAL, SKIP KALO ERROR) =====
-    - name: Setup Rclone (Opsional)
+    # ==========================================
+    # 3. GOOGLE DRIVE (OPSIONAL)
+    # ==========================================
+    - name: Setup Rclone
+      if: github.event.inputs.storage == 'yes'
       uses: AnimMouse/setup-rclone@v1
       continue-on-error: true
     
-    - name: Restore dari Google Drive (Skip kalo error)
+    - name: Restore dari Google Drive
+      if: github.event.inputs.storage == 'yes'
       continue-on-error: true
       run: |
-        # Cek apakah rclone.conf ada
         if (Test-Path "C:\Users\runneradmin\AppData\Roaming\rclone\rclone.conf") {
           mkdir ${{ env.DATA_PATH }} -Force
           rclone copy gdrive:khen-data ${{ env.DATA_PATH }} --verbose 2>&1
-          Write-Host "Data restored from Google Drive"
+          Write-Host "✅ Restore dari Google Drive berhasil"
         } else {
-          Write-Host "SKIP: rclone.conf tidak ditemukan, lanjut tanpa Google Drive"
+          Write-Host "⚠️ rclone.conf tidak ditemukan, skip Google Drive"
         }
     
-    # ===== INFO SPESIFIKASI =====
-    - name: Info Spesifikasi
+    # ==========================================
+    # 4. INFO SPESIFIKASI
+    # ==========================================
+    - name: System Info
       run: |
         Write-Host "========================================"
-        Write-Host "  KHEN RDP - ${{ github.event.inputs.version }}"
+        Write-Host "  SYSTEM INFO"
         Write-Host "========================================"
         Write-Host "CPU:"
         Get-WmiObject -Class Win32_Processor
         Write-Host "RAM:"
         Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+        Write-Host "OS:"
+        Get-WmiObject -Class Win32_OperatingSystem
         Write-Host "========================================"
-        Write-Host "DATA PATH: ${{ env.DATA_PATH }}"
+        
         if (Test-Path "${{ env.DATA_PATH }}") {
           $size = (Get-ChildItem -Path ${{ env.DATA_PATH }} -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
           if ($size) {
-            Write-Host "DATA SIZE: $([math]::Round($size / 1MB, 2)) MB"
+            Write-Host "📁 DATA SIZE: $([math]::Round($size / 1MB, 2)) MB"
           } else {
-            Write-Host "DATA SIZE: 0 MB (kosong)"
+            Write-Host "📁 DATA SIZE: 0 MB (kosong)"
           }
         } else {
-          Write-Host "DATA: Belum ada, akan dibuat baru"
+          Write-Host "📁 DATA: Belum ada"
         }
         Write-Host "========================================"
     
-    # ===== SETUP RDP =====
+    # ==========================================
+    # 5. SETUP RDP
+    # ==========================================
     - name: Setup RDP
       run: |
         # Enable RDP
@@ -93,15 +131,15 @@ jobs:
         Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 1
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         
-        # Cek user sudah ada atau belum
+        # Create user (kalo belum ada)
         $userExists = net user ${{ env.RDP_USER }} 2>&1 | Select-String "User name"
         if ($userExists) {
-          Write-Host "User ${{ env.RDP_USER }} sudah ada, skip create"
+          Write-Host "✅ User ${{ env.RDP_USER }} sudah ada"
         } else {
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup "Administrators" ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
-          Write-Host "User ${{ env.RDP_USER }} created"
+          Write-Host "✅ User ${{ env.RDP_USER }} created"
         }
         
         # Setup folder data
@@ -112,66 +150,80 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
         
-        # Redirect user folders ke DATA_PATH
+        # Redirect user folders
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        if (!(Test-Path "$userPath\Desktop")) {
-          cmd /c mklink /J "$userPath\Desktop" "${{ env.DATA_PATH }}\Desktop" 2>$null
-        }
-        if (!(Test-Path "$userPath\Documents")) {
-          cmd /c mklink /J "$userPath\Documents" "${{ env.DATA_PATH }}\Documents" 2>$null
-        }
-        if (!(Test-Path "$userPath\Downloads")) {
-          cmd /c mklink /J "$userPath\Downloads" "${{ env.DATA_PATH }}\Downloads" 2>$null
-        }
-        if (!(Test-Path "$userPath\Pictures")) {
-          cmd /c mklink /J "$userPath\Pictures" "${{ env.DATA_PATH }}\Pictures" 2>$null
-        }
-        if (!(Test-Path "$userPath\Music")) {
-          cmd /c mklink /J "$userPath\Music" "${{ env.DATA_PATH }}\Music" 2>$null
-        }
-        if (!(Test-Path "$userPath\Videos")) {
-          cmd /c mklink /J "$userPath\Videos" "${{ env.DATA_PATH }}\Videos" 2>$null
+        @('Desktop','Documents','Downloads','Pictures','Music','Videos') | ForEach-Object {
+          $target = "${{ env.DATA_PATH }}\$_"
+          if (!(Test-Path "$userPath\$_")) {
+            cmd /c mklink /J "$userPath\$_" "$target" 2>$null
+          }
         }
         
-        # Simpan config
+        # Simpan config lengkap
         @"
-        ╔═══════════════════════════════════════════╗
-        ║       KHEN RDP SYSTEM ACTIVE             ║
-        ╠═══════════════════════════════════════════╣
-        ║ HOST   : ${{ env.RDP_DOMAIN }}           ║
-        ║ USER   : ${{ env.RDP_USER }}             ║
-        ║ PASS   : ${{ env.RDP_PASS }}             ║
-        ║ DATA   : ${{ env.DATA_PATH }}            ║
-        ║ VERSION: ${{ github.event.inputs.version }} ║
-        ║ STATUS : ONLINE                          ║
-        ╚═══════════════════════════════════════════╝
+        ╔═══════════════════════════════════════════════════╗
+        ║              KHEN RDP ULTIMATE                   ║
+        ╠═══════════════════════════════════════════════════╣
+        ║ HOST      : ${{ env.RDP_DOMAIN }}               ║
+        ║ USER      : ${{ env.RDP_USER }}                 ║
+        ║ PASS      : ${{ env.RDP_PASS }}                 ║
+        ║ DATA      : ${{ env.DATA_PATH }}                ║
+        ║ VERSION   : ${{ github.event.inputs.version }}  ║
+        ║ STORAGE   : ${{ github.event.inputs.storage }}  ║
+        ║ STATUS    : ONLINE                              ║
+        ╚═══════════════════════════════════════════════════╝
         "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
         Write-Host ""
         Write-Host "========================================"
-        Write-Host "  KHEN RDP ACTIVE"
+        Write-Host "  ✅ KHEN RDP ULTIMATE ACTIVE"
         Write-Host "========================================"
         Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
         Write-Host "========================================"
-        Write-Host "DATA AMAN! Tidak hilang walau restart"
+        Write-Host "✅ DATA AMAN! Tidak hilang walau restart"
         Write-Host "========================================"
     
-    # ===== CLOUDFLARE TUNNEL =====
+    # ==========================================
+    # 6. CLOUDFLARE TUNNEL (DENGAN RETRY)
+    # ==========================================
     - name: Cloudflare Tunnel
       env:
         CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
       run: |
         curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-        echo $env:CF_TOKEN | .\cloudflared.exe tunnel login 2>&1 | Out-Null
-        .\cloudflared.exe tunnel delete khen-rdp -f 2>&1 | Out-Null
-        .\cloudflared.exe tunnel create khen-rdp 2>&1 | Out-Null
-        .\cloudflared.exe tunnel route dns khen-rdp ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
         
+        # Login dengan retry
+        $retry = 0
+        $success = $false
+        while ($retry -lt 3 -and !$success) {
+          try {
+            echo $env:CF_TOKEN | .\cloudflared.exe tunnel login 2>&1 | Out-Null
+            $success = $true
+            Write-Host "✅ Tunnel login berhasil"
+          } catch {
+            $retry++
+            Write-Host "⚠️ Retry $retry/3..."
+            Start-Sleep -Seconds 5
+          }
+        }
+        
+        # Hapus tunnel lama
+        .\cloudflared.exe tunnel delete khen-ultimate -f 2>&1 | Out-Null
+        
+        # Buat tunnel baru
+        .\cloudflared.exe tunnel create khen-ultimate 2>&1 | Out-Null
+        
+        # Route ke domain
+        .\cloudflared.exe tunnel route dns khen-ultimate ${{ env.RDP_DOMAIN }} 2>&1 | Out-Null
+        
+        # Cari credentials
         $credFile = Get-ChildItem C:\Users\runneradmin\.cloudflared\*.json | Select-Object -First 1
         
+        # Config
         @"
-        tunnel: khen-rdp
+        tunnel: khen-ultimate
         credentials-file: $($credFile.FullName)
         ingress:
           - hostname: ${{ env.RDP_DOMAIN }}
@@ -179,21 +231,65 @@ jobs:
           - service: http_status:404
         "@ | Out-File C:\Users\runneradmin\.cloudflared\config.yml -Force
         
-        Start-Process ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-rdp" -WindowStyle Hidden -PassThru
+        # Jalankan tunnel
+        Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel run --config C:\Users\runneradmin\.cloudflared\config.yml khen-ultimate" -WindowStyle Hidden -PassThru
         
-        Write-Host "Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+        Write-Host "✅ Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
     
-    # ===== KEEP ALIVE =====
-    - name: Keep Alive & Backup Otomatis
+    # ==========================================
+    # 7. WEB STATUS
+    # ==========================================
+    - name: Web Status
       run: |
+        New-Item -ItemType Directory -Force -Path "${{ env.DATA_PATH }}\web"
+        @"
+        <!DOCTYPE html>
+        <html>
+        <head><title>KHEN RDP Status</title>
+        <style>
+        body { font-family: 'Courier New',monospace; background:#0a0a0a; color:#00ff00; text-align:center; padding:50px; }
+        .box { background:#1a1a1a; padding:40px; border-radius:15px; border:2px solid #00ff00; max-width:600px; margin:auto; }
+        .status { color:#00ff00; font-size:52px; }
+        .host { color:#00ffaa; font-size:24px; }
+        .user { color:#ffaa00; }
+        .pass { color:#ff4444; }
+        .footer { margin-top:30px; color:#444; font-size:12px; }
+        </style>
+        </head>
+        <body>
+        <div class="box">
+        <div class="status">✅ KHEN RDP ACTIVE</div>
+        <div class="host">${{ env.RDP_DOMAIN }}</div>
+        <p><span class="user">User: ${{ env.RDP_USER }}</span></p>
+        <p><span class="pass">Pass: ${{ env.RDP_PASS }}</span></p>
+        <p>Data: Persistent (TIDAK HILANG)</p>
+        <div class="footer">KHEN ULTIMATE v3.0 | 24/7</div>
+        </div>
+        </body>
+        </html>
+        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\web\index.html" -Force
+        
+        # Jalankan web server pake python
+        Start-Process -FilePath "python" -ArgumentList "-m http.server 8080 --directory ${{ env.DATA_PATH }}\web" -WindowStyle Hidden
+        Write-Host "✅ Web status running on port 8080"
+    
+    # ==========================================
+    # 8. KEEP ALIVE + HEARTBEAT
+    # ==========================================
+    - name: Keep Alive
+      run: |
+        $counter = 0
         while ($true) {
+          $counter++
           $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-          "$time - KHEN RDP ${{ github.event.inputs.version }} ACTIVE" | Out-File -FilePath "${{ env.DATA_PATH }}\heartbeat.txt" -Append
-          Write-Host "[$time] KHEN RDP ACTIVE"
+          "$time - KHEN ULTIMATE #$counter" | Out-File -FilePath "${{ env.DATA_PATH }}\heartbeat.txt" -Append
+          Write-Host "[$time] KHEN ULTIMATE #$counter"
           Start-Sleep -Seconds 300
         }
     
-    # ===== UPLOAD BACKUP KE ARTIFACT =====
+    # ==========================================
+    # 9. BACKUP (ARTIFACT + GOOGLE DRIVE)
+    # ==========================================
     - name: Upload Backup ke Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -201,23 +297,27 @@ jobs:
         path: ${{ env.DATA_PATH }}
         retention-days: 90
     
-    # ===== UPLOAD BACKUP KE GOOGLE DRIVE (SKIP KALO ERROR) =====
-    - name: Upload Backup ke Google Drive (Opsional)
+    - name: Upload Backup ke Google Drive
+      if: github.event.inputs.storage == 'yes'
       continue-on-error: true
       run: |
         if (Test-Path "C:\Users\runneradmin\AppData\Roaming\rclone\rclone.conf") {
           rclone copy ${{ env.DATA_PATH }} gdrive:khen-data --verbose 2>&1
-          Write-Host "Data backed up to Google Drive"
+          Write-Host "✅ Backup ke Google Drive berhasil"
         } else {
-          Write-Host "SKIP: rclone.conf tidak ditemukan, lanjut tanpa Google Drive"
+          Write-Host "⚠️ rclone.conf tidak ditemukan, skip"
         }
     
-    # ===== TRIGGER NEXT RUN =====
+    # ==========================================
+    # 10. TRIGGER NEXT RUN
+    # ==========================================
     - name: Trigger Next Run
       run: |
+        $version = "${{ github.event.inputs.version }}"
+        $storage = "${{ github.event.inputs.storage }}"
         curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen.yml/dispatches \
-          -d '{"ref":"main", "inputs": {"version": "${{ github.event.inputs.version }}"}}'
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp-khen-ultimate.yml/dispatches \
+          -d "{\"ref\":\"main\", \"inputs\": {\"version\":\"$version\", \"storage\":\"$storage\"}}"
       continue-on-error: true
