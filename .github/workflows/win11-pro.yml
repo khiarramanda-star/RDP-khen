@@ -118,51 +118,84 @@ jobs:
         Write-Host "✅ DATA AMAN! Tidak hilang walau restart"
         Write-Host "========================================"
     
-    - name: ZeroTier VPN
+    - name: Cloudflare Tunnel (Try)
+      id: cloudflare
+      continue-on-error: true
+      env:
+        CF_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
       run: |
         Write-Host "========================================"
-        Write-Host "  ZEROTIER VPN"
+        Write-Host "  CLOUDFLARE TUNNEL (TRY)"
         Write-Host "========================================"
         
-        curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
-        if (-not (Test-Path ZeroTier.msi)) {
-          Write-Host "⚠️ Download gagal, skip VPN..."
+        if (-not $env:CF_TOKEN) {
+          Write-Host "⚠️ No Cloudflare token, skip..."
           exit 0
         }
         
-        msiexec /i ZeroTier.msi /quiet /norestart
-        Start-Sleep -Seconds 15
+        curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
         
-        $ztPaths = @(
-          "C:\Program Files\ZeroTier\One\zerotier-one.exe",
-          "C:\Program Files (x86)\ZeroTier\One\zerotier-one.exe"
-        )
-        $zt = $null
-        foreach ($p in $ztPaths) {
-          if (Test-Path $p) {
-            $zt = $p
-            break
-          }
+        Write-Host "🔄 Starting Cloudflare Tunnel..."
+        $process = Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
+        
+        Start-Sleep -Seconds 10
+        
+        # Cek apakah process masih jalan
+        $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
+        if ($running) {
+          Write-Host "✅ Cloudflare Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
+          Write-Host "##CLOUDFLARE_SUCCESS##" >> $env:GITHUB_STEP_SUMMARY
+        } else {
+          Write-Host "⚠️ Cloudflare gagal, fallback ke Tailscale..."
+          exit 1
         }
-        if (-not $zt) {
-          Write-Host "⚠️ ZeroTier not found, skip VPN..."
+    
+    - name: Tailscale VPN (Fallback)
+      if: steps.cloudflare.outcome == 'failure' || steps.cloudflare.conclusion == 'failure'
+      env:
+        TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+      run: |
+        Write-Host "========================================"
+        Write-Host "  TAILSCALE VPN (FALLBACK)"
+        Write-Host "========================================"
+        
+        if (-not $env:TS_AUTHKEY) {
+          Write-Host "❌ ERROR: No Tailscale auth key!"
+          Write-Host "⚠️  Set TS_AUTHKEY secret di Settings → Secrets → Actions"
           exit 0
         }
         
-        & $zt -q join ${{ env.ZT_NETWORK }}
+        Write-Host "🔄 Installing Tailscale..."
+        curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
+        if (-not (Test-Path tailscale.msi)) {
+          Write-Host "⚠️ Download Tailscale gagal, skip VPN..."
+          exit 0
+        }
+        
+        msiexec /i tailscale.msi /quiet /norestart
         Start-Sleep -Seconds 15
         
-        $ip = & $zt -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
+        $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+        if (-not (Test-Path $tsPath)) {
+          Write-Host "⚠️ Tailscale not found, skip VPN..."
+          exit 0
+        }
+        
+        Write-Host "🔄 Login ke Tailscale..."
+        & $tsPath login --auth-key $env:TS_AUTHKEY
+        Start-Sleep -Seconds 5
+        
+        $ip = & $tsPath ip
         
         Write-Host ""
         Write-Host "========================================"
-        Write-Host "  ✅ ZEROTIER ACTIVE"
+        Write-Host "  ✅ TAILSCALE ACTIVE (FALLBACK)"
         Write-Host "========================================"
         Write-Host "IP   : $ip"
         Write-Host "USER : ${{ env.RDP_USER }}"
         Write-Host "PASS : ${{ env.RDP_PASS }}"
         Write-Host "========================================"
-        Write-Host "⚠️  Buka ZeroTier Dashboard, Authorize device!"
+        Write-Host "⚠️  Akses RDP pake IP Tailscale di atas"
         Write-Host "========================================"
     
     - name: Keep Alive
