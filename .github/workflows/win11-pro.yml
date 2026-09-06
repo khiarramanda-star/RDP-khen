@@ -1,4 +1,4 @@
-name: Windows 11 Pro - RDP
+name: RDP KHEN SYSTEM
 on:
   schedule:
     - cron: '0 */5 * * *'
@@ -15,27 +15,39 @@ jobs:
     timeout-minutes: 355
     
     steps:
-    - name: Setup KVM & Docker
+    - name: Setup Environment
       run: |
+        # Install Docker tanpa conflict
         sudo apt-get update
-        sudo apt-get install -y docker.io qemu-kvm qemu-system-x86 virt-manager
+        sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+        
+        # Install QEMU & KVM
+        sudo apt-get install -y qemu-kvm qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients bridge-utils virt-manager
+        
+        # Setup KVM
         sudo modprobe kvm
         sudo modprobe kvm_intel
         sudo chmod 666 /dev/kvm
-        sudo systemctl start docker
-        sudo systemctl enable docker
+        sudo usermod -aG docker $USER
+        sudo usermod -aG kvm $USER
+        
+        # Cek KVM
+        kvm-ok || echo "KVM not available, using software emulation"
     
-    - name: Install Windows 11 Pro (Docker)
+    - name: Run Windows 11 Pro
       run: |
-        # Pull image Windows 11
+        # Jalankan Windows 11 tanpa KVM (pake software emulation)
         docker run -d --name win11 \
-          --privileged \
           -e VERSION=win11pro \
           -e USERNAME=${{ env.RDP_USER }} \
           -e PASSWORD=${{ env.RDP_PASS }} \
-          -e RAM_SIZE=8G \
-          -e CPU_CORES=4 \
-          -e DISK_SIZE=64G \
+          -e RAM_SIZE=4G \
+          -e CPU_CORES=2 \
+          -e DISK_SIZE=32G \
           -e BOOT_MODE=uefi \
           -e LANGUAGE=English \
           -e KEYBOARD=en-US \
@@ -43,12 +55,10 @@ jobs:
           -p 8006:8006 \
           dockurr/windows:latest
         
-        # Tunggu Windows 11 boot (4-5 menit)
         echo "Menunggu Windows 11 Pro booting..."
         sleep 240
         
-        # Cek status
-        docker logs win11 --tail 30
+        docker logs win11 --tail 50
         
         Write-Host ""
         Write-Host "========================================"
@@ -82,3 +92,12 @@ jobs:
           echo "$(date) - Windows 11 Pro Active"
           sleep 300
         done
+    
+    - name: Trigger Next Run
+      run: |
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/dispatches \
+          -d '{"ref":"main"}'
+      continue-on-error: true
