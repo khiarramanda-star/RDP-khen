@@ -45,6 +45,8 @@ jobs:
           Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
           Write-Host "  Backup : ${{ github.event.inputs.backup }}"
           Write-Host "========================================"
+          
+          # Hapus file gak penting
           Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "C:\Program Files\dotnet" -Recurse -Force -ErrorAction SilentlyContinue
@@ -60,31 +62,41 @@ jobs:
           Write-Host "========================================"
           Write-Host "  OPTIMASI RAM & VIRTUAL MEMORY"
           Write-Host "========================================"
+          
+          # Stop service gak penting
           Stop-Service -Name SysMain -Force -ErrorAction SilentlyContinue
           Stop-Service -Name WSearch -Force -ErrorAction SilentlyContinue
           Stop-Service -Name XboxNetApiSvc -Force -ErrorAction SilentlyContinue
           Stop-Service -Name DiagTrack -Force -ErrorAction SilentlyContinue
-          $computerSystem = Get-WmiObject -Class Win32_ComputerSystem
-          $computerSystem.AutomaticManagedPagefile = $false
-          $computerSystem.Put()
-          $pagefile = Get-WmiObject -Class Win32_PageFileSetting
-          $pagefile.InitialSize = 65536
-          $pagefile.MaximumSize = 65536
-          $pagefile.Put()
-          Write-Host "Pagefile 64GB siap"
+          
+          # Set Pagefile via CIM (fix error Put)
+          try {
+            $pagefile = Get-CimInstance -ClassName Win32_PageFileSetting
+            $pagefile.InitialSize = 32768
+            $pagefile.MaximumSize = 32768
+            Set-CimInstance -InputObject $pagefile
+            Write-Host "Pagefile 32GB siap"
+          } catch {
+            Write-Host "⚠️ Gagal set pagefile, lanjut tanpa pagefile"
+          }
+          
+          Write-Host "RAM optimization done"
 
       - name: FPS Boost
         run: |
           Write-Host "========================================"
           Write-Host "  FPS BOOST & GAMING OPTIMIZATION"
           Write-Host "========================================"
+          
           powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+          
           reg add "HKCU\Software\Microsoft\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f
           reg add "HKCU\Software\Microsoft\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v GPU Priority /t REG_DWORD /d 8 /f
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v Priority /t REG_DWORD /d 6 /f
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f
+          
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f
           reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f
           reg add "HKCU\Control Panel\Desktop\WindowMetrics" /v MinAnimate /t REG_SZ /d 0 /f
@@ -92,6 +104,7 @@ jobs:
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
+          
           Write-Host "FPS Boost applied"
 
       - name: Restore Cache
@@ -131,6 +144,7 @@ jobs:
           Write-Host "========================================"
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
+          
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d 3389 /f
@@ -138,11 +152,14 @@ jobs:
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableCursorShadow /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableWallpaper /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableWddmDriver /t REG_DWORD /d 1 /f
+          
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
           netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+          
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
+          
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
@@ -151,20 +168,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
           New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\SaveGames
+          
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Steam
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Epic
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\GOG
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Rockstar
           New-Item -ItemType Directory -Force -Path ${{ env.GAMING_PATH }}\Minecraft
+          
           $userPath = "C:\Users\${{ env.RDP_USER }}"
           if (-not (Test-Path $userPath)) { New-Item -ItemType Directory -Force -Path $userPath }
+          
           $folders = @('Desktop','Documents','Downloads','Pictures','Music','Videos','SaveGames')
           foreach ($folder in $folders) {
             $target = "${{ env.DATA_PATH }}\$folder"
             if (Test-Path "$userPath\$folder") { Remove-Item -Path "$userPath\$folder" -Force -ErrorAction SilentlyContinue }
             cmd /c mklink /J "$userPath\$folder" "$target"
           }
+          
           $config = @"
           ============================================================
           RYZEN GAMING ULTIMATE
@@ -176,10 +197,11 @@ jobs:
           WINDOWS   : ${{ github.event.inputs.windows_version }}
           BACKUP    : ${{ github.event.inputs.backup }}
           STATUS    : ONLINE
-          OPTIMASI  : 64GB Pagefile, FPS Boost, Gaming Mode
+          OPTIMASI  : 32GB Pagefile, FPS Boost, Gaming Mode
           ============================================================
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
+          
           Write-Host ""
           Write-Host "========================================"
           Write-Host "  RDP GAMING ACTIVE"
@@ -239,12 +261,6 @@ jobs:
           Write-Host "  Backup : ${{ github.event.inputs.backup }}"
           Write-Host "  Data   : ${{ env.DATA_PATH }} (PERMANEN)"
           Write-Host "  Games  : ${{ env.GAMING_PATH }} (PERMANEN)"
-          Write-Host ""
-          Write-Host "  OPTIMASI:"
-          Write-Host "  - 64GB Pagefile"
-          Write-Host "  - FPS Boost Registry"
-          Write-Host "  - Gaming Mode ON"
-          Write-Host "  - Network Optimizer"
           Write-Host ""
           Write-Host "  ⏰ 4 jam tersisa..."
           Write-Host ""
