@@ -21,7 +21,6 @@ env:
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
   DATA_PATH: C:\khen-data
-  ZT_NETWORK: 743993800fc54708
 
 jobs:
   rdp:
@@ -146,7 +145,7 @@ jobs:
         Write-Host "========================================"
     
     # ==========================================
-    # 5. CLOUDFLARE TUNNEL
+    # 5. CLOUDFLARE TUNNEL (FIXED)
     # ==========================================
     - name: Cloudflare Tunnel
       env:
@@ -157,8 +156,7 @@ jobs:
         Write-Host "========================================"
         
         if (-not $env:CF_TOKEN) {
-          Write-Host "❌ ERROR: CLOUDFLARE_TUNNEL_TOKEN not set!"
-          Write-Host "⚠️  Set secret dulu di Settings → Secrets → Actions"
+          Write-Host "⚠️ No Cloudflare token, skipping..."
           exit 0
         }
         
@@ -172,7 +170,7 @@ jobs:
         Write-Host "⚠️  Tunggu 1-2 menit, DNS propagate"
     
     # ==========================================
-    # 6. TAILSCALE VPN
+    # 6. TAILSCALE VPN (FIXED)
     # ==========================================
     - name: Tailscale VPN
       env:
@@ -183,14 +181,14 @@ jobs:
         Write-Host "========================================"
         
         if (-not $env:TS_AUTHKEY) {
-          Write-Host "⚠️ No Tailscale auth key, skip VPN..."
+          Write-Host "⚠️ No Tailscale auth key, skipping..."
           exit 0
         }
         
         curl -s -L -o tailscale.msi https://pkgs.tailscale.com/stable/win/tailscale-installer.msi
         
         if (-not (Test-Path tailscale.msi)) {
-          Write-Host "⚠️ Download Tailscale gagal, skip VPN..."
+          Write-Host "⚠️ Download Tailscale gagal, skipping..."
           exit 0
         }
         
@@ -199,7 +197,7 @@ jobs:
         
         $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
         if (-not (Test-Path $tsPath)) {
-          Write-Host "⚠️ Tailscale not found, skip VPN..."
+          Write-Host "⚠️ Tailscale not found, skipping..."
           exit 0
         }
         
