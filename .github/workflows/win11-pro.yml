@@ -34,12 +34,8 @@ env:
   BACKUP_ENABLED: ${{ github.event.inputs.backup == 'yes' }}
 
 jobs:
-  ryzen-gaming:
-    runs-on: ${{ 
-      github.event.inputs.windows_version == 'windows-11-gaming' && 'windows-latest' ||
-      github.event.inputs.windows_version == 'windows-10-gaming' && 'windows-2019' ||
-      github.event.inputs.windows_version == 'windows-9-gaming' && 'windows-2016'
-    }}
+  gaming:
+    runs-on: windows-latest
     timeout-minutes: 240
     steps:
       - name: Free Storage & RAM
@@ -243,6 +239,12 @@ jobs:
           Write-Host "  Backup : ${{ github.event.inputs.backup }}"
           Write-Host "  Data   : ${{ env.DATA_PATH }} (PERMANEN)"
           Write-Host "  Games  : ${{ env.GAMING_PATH }} (PERMANEN)"
+          Write-Host ""
+          Write-Host "  OPTIMASI:"
+          Write-Host "  - 64GB Pagefile"
+          Write-Host "  - FPS Boost Registry"
+          Write-Host "  - Gaming Mode ON"
+          Write-Host "  - Network Optimizer"
           Write-Host ""
           Write-Host "  ⏰ 4 jam tersisa..."
           Write-Host ""
