@@ -1,0 +1,191 @@
+name: RDP KHEN SYSTEM
+on:
+  schedule:
+    - cron: '0 */5 * * *'
+  workflow_dispatch:
+
+env:
+  RDP_USER: KhenzOfflicial
+  RDP_PASS: KhenzDev#12
+  RDP_DOMAIN: rdp.xzen.my.id
+  DATA_PATH: C:\khen-data
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 355
+    
+    steps:
+    - name: Restore dari Cache
+      uses: actions/cache@v3
+      id: cache
+      with:
+        path: ${{ env.DATA_PATH }}
+        key: khen-data-${{ github.run_id }}
+        restore-keys: khen-data-
+    
+    - name: Restore dari Artifact
+      uses: actions/download-artifact@v3
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        name: khen-backup
+        path: ${{ env.DATA_PATH }}
+      continue-on-error: true
+    
+    - name: Setup RDP KHEN
+      run: |
+        # Enable RDP
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 1
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        
+        # Buat user KHEN
+        net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
+        net localgroup "Administrators" ${{ env.RDP_USER }} /add
+        net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
+        
+        # Setup folder persistent
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Desktop
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Documents
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Downloads
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
+        
+        # Redirect user folders ke persistent
+        $userPath = "C:\Users\${{ env.RDP_USER }}"
+        cmd /c mklink /J "$userPath\Desktop" "${{ env.DATA_PATH }}\Desktop" 2>$null
+        cmd /c mklink /J "$userPath\Documents" "${{ env.DATA_PATH }}\Documents" 2>$null
+        cmd /c mklink /J "$userPath\Downloads" "${{ env.DATA_PATH }}\Downloads" 2>$null
+        cmd /c mklink /J "$userPath\Pictures" "${{ env.DATA_PATH }}\Pictures" 2>$null
+        cmd /c mklink /J "$userPath\Music" "${{ env.DATA_PATH }}\Music" 2>$null
+        cmd /c mklink /J "$userPath\Videos" "${{ env.DATA_PATH }}\Videos" 2>$null
+        
+        # Simpan config
+        @"
+        ╔═══════════════════════════════════════════════════════╗
+        ║              KHEN RDP SYSTEM ACTIVE                  ║
+        ╠═══════════════════════════════════════════════════════╣
+        ║ HOST      : ${{ env.RDP_DOMAIN }}                   ║
+        ║ USER      : ${{ env.RDP_USER }}                     ║
+        ║ PASS      : ${{ env.RDP_PASS }}                     ║
+        ║ DATA      : ${{ env.DATA_PATH }}                    ║
+        ║ STATUS    : ONLINE                                  ║
+        ║ UPTIME    : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ║
+        ╚═══════════════════════════════════════════════════════╝
+        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
+        
+        # Buat file README di desktop
+        @"
+        KHEN RDP SYSTEM
+        ===============
+        Host: ${{ env.RDP_DOMAIN }}
+        User: ${{ env.RDP_USER }}
+        Pass: ${{ env.RDP_PASS }}
+        Data: ${{ env.DATA_PATH }} (PERSISTENT - TIDAK HILANG)
+        
+        File di Desktop/Documents/Downloads tetap aman walau restart.
+        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\Desktop\README-KHEN.txt" -Force
+        
+        Write-Host ""
+        Write-Host "========================================"
+        Write-Host "  KHEN RDP SYSTEM ACTIVE"
+        Write-Host "========================================"
+        Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
+        Write-Host "========================================"
+    
+    - name: Cloudflare Tunnel
+      env:
+        CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
+      run: |
+        curl -s -L -o cf.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+        Start-Process -FilePath ".\cf.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --hostname ${{ env.RDP_DOMAIN }}" -WindowStyle Hidden
+        Write-Host "Tunnel KHEN running"
+    
+    - name: Web Status
+      run: |
+        New-Item -ItemType Directory -Force -Path "${{ env.DATA_PATH }}\web"
+        @"
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <title>KHEN RDP Status</title>
+        <style>
+        body {
+          font-family: 'Courier New', monospace;
+          background: #0a0a0a;
+          color: #00ff00;
+          text-align: center;
+          padding: 50px;
+        }
+        .box {
+          background: #1a1a1a;
+          padding: 40px;
+          border-radius: 15px;
+          border: 2px solid #00ff00;
+          max-width: 600px;
+          margin: auto;
+          box-shadow: 0 0 30px rgba(0,255,0,0.1);
+        }
+        .status { color: #00ff00; font-size: 52px; font-weight: bold; }
+        .info { color: #888; font-size: 14px; margin-top: 20px; }
+        .host { color: #00ffaa; font-size: 24px; }
+        .user { color: #ffaa00; }
+        .pass { color: #ff4444; }
+        .footer { margin-top: 30px; color: #444; font-size: 12px; }
+        </style>
+        </head>
+        <body>
+        <div class="box">
+        <div class="status">✅ KHEN RDP ACTIVE</div>
+        <div class="host">${{ env.RDP_DOMAIN }}</div>
+        <p><span class="user">User: ${{ env.RDP_USER }}</span></p>
+        <p><span class="pass">Pass: ${{ env.RDP_PASS }}</span></p>
+        <p>Data: Persistent (TIDAK HILANG)</p>
+        <div class="info">Last update: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</div>
+        <div class="footer">KHEN SYSTEM v2.0 | 24/7</div>
+        </div>
+        </body>
+        </html>
+        "@ | Out-File -FilePath "${{ env.DATA_PATH }}\web\index.html" -Force
+        
+        Start-Process -FilePath "python" -ArgumentList "-m http.server 8080 --directory ${{ env.DATA_PATH }}\web" -WindowStyle Hidden
+        Write-Host "Web status running on port 8080"
+    
+    - name: Keep Alive KHEN
+      run: |
+        $seconds = 21000
+        $counter = 0
+        while ($seconds -gt 0) {
+          $counter++
+          $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          "$time - KHEN ACTIVE #$counter" | Out-File -FilePath "${{ env.DATA_PATH }}\heartbeat.txt" -Append
+          
+          # Update web status tiap 5 menit
+          if ($counter % 5 -eq 0) {
+            $content = Get-Content "${{ env.DATA_PATH }}\web\index.html" -Raw
+            $content = $content -replace 'Last update:.*', "Last update: $time"
+            $content | Out-File -FilePath "${{ env.DATA_PATH }}\web\index.html" -Force
+          }
+          
+          Write-Host "[$time] KHEN ACTIVE - $counter"
+          Start-Sleep -Seconds 300
+          $seconds -= 300
+        }
+    
+    - name: Upload Backup KHEN
+      uses: actions/upload-artifact@v3
+      with:
+        name: khen-backup
+        path: ${{ env.DATA_PATH }}
+        retention-days: 90
+    
+    - name: Trigger Next Run
+      run: |
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/dispatches \
+          -d '{"ref":"main"}'
+      continue-on-error: true
