@@ -15,18 +15,19 @@ jobs:
     timeout-minutes: 355
     
     steps:
-    - name: Setup Environment
+    - name: Setup Docker & QEMU
       run: |
-        # Install Docker tanpa conflict
         sudo apt-get update
-        sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+        sudo apt-get install -y \
+          apt-transport-https ca-certificates curl \
+          software-properties-common qemu-kvm qemu-system-x86 \
+          qemu-utils libvirt-daemon-system libvirt-clients
+        
+        # Install Docker official
         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         sudo apt-get update
         sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-        
-        # Install QEMU & KVM
-        sudo apt-get install -y qemu-kvm qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients bridge-utils virt-manager
         
         # Setup KVM
         sudo modprobe kvm
@@ -35,19 +36,24 @@ jobs:
         sudo usermod -aG docker $USER
         sudo usermod -aG kvm $USER
         
-        # Cek KVM
-        kvm-ok || echo "KVM not available, using software emulation"
+        # Verifikasi
+        docker --version
+        kvm-ok || echo "KVM not available"
     
-    - name: Run Windows 11 Pro
+    - name: Run Windows 11 Pro (RAM 8GB)
       run: |
-        # Jalankan Windows 11 tanpa KVM (pake software emulation)
+        # Hapus container lama kalo ada
+        docker rm -f win11 2>/dev/null || true
+        
+        # Jalankan Windows 11 dengan RAM 8GB
         docker run -d --name win11 \
+          --privileged \
           -e VERSION=win11pro \
           -e USERNAME=${{ env.RDP_USER }} \
           -e PASSWORD=${{ env.RDP_PASS }} \
-          -e RAM_SIZE=4G \
-          -e CPU_CORES=2 \
-          -e DISK_SIZE=32G \
+          -e RAM_SIZE=8G \
+          -e CPU_CORES=4 \
+          -e DISK_SIZE=64G \
           -e BOOT_MODE=uefi \
           -e LANGUAGE=English \
           -e KEYBOARD=en-US \
@@ -56,40 +62,60 @@ jobs:
           dockurr/windows:latest
         
         echo "Menunggu Windows 11 Pro booting..."
-        sleep 240
+        sleep 300
         
-        docker logs win11 --tail 50
+        # Cek status
+        docker logs win11 --tail 30
         
         Write-Host ""
         Write-Host "========================================"
-        Write-Host "  WINDOWS 11 PRO ACTIVE"
+        Write-Host "  WINDOWS 11 PRO ACTIVE (8GB RAM)"
         Write-Host "========================================"
         Write-Host "HOST   : ${{ env.RDP_DOMAIN }}"
         Write-Host "USER   : ${{ env.RDP_USER }}"
         Write-Host "PASS   : ${{ env.RDP_PASS }}"
         Write-Host "========================================"
     
-    - name: Cloudflare Tunnel
+    - name: Setup Cloudflare Tunnel (FIX EXIT 1)
       env:
         CF_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
       run: |
+        # Download cloudflared
         curl -s -L -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
         chmod +x cloudflared
         
-        echo $CF_TOKEN | ./cloudflared tunnel login
+        # Coba login dengan token
+        echo $CF_TOKEN | ./cloudflared tunnel login || {
+          echo "Login gagal, coba metode lain..."
+          ./cloudflared tunnel login --url ${{ env.RDP_DOMAIN }}
+        }
         
-        ./cloudflared tunnel delete win11-rdp -f 2>/dev/null
-        ./cloudflared tunnel create win11-rdp 2>/dev/null
-        ./cloudflared tunnel route dns win11-rdp ${{ env.RDP_DOMAIN }} 2>/dev/null
+        # Hapus tunnel lama
+        ./cloudflared tunnel delete win11-rdp -f 2>/dev/null || true
         
-        ./cloudflared tunnel run --url tcp://localhost:3389 win11-rdp &
+        # Buat tunnel baru
+        ./cloudflared tunnel create win11-rdp 2>/dev/null || {
+          echo "Tunnel sudah ada, lanjut..."
+        }
+        
+        # Route ke domain
+        ./cloudflared tunnel route dns win11-rdp ${{ env.RDP_DOMAIN }} 2>/dev/null || {
+          echo "Route sudah ada, lanjut..."
+        }
+        
+        # Jalankan tunnel
+        nohup ./cloudflared tunnel run --url tcp://localhost:3389 win11-rdp > tunnel.log 2>&1 &
+        
+        # Tunggu tunnel aktif
+        sleep 10
+        cat tunnel.log || echo "Log tunnel tidak ditemukan"
         
         Write-Host "Tunnel aktif di: ${{ env.RDP_DOMAIN }}"
     
     - name: Keep Alive
       run: |
         while true; do
-          echo "$(date) - Windows 11 Pro Active"
+          echo "$(date) - Windows 11 Pro Active (8GB RAM)"
           sleep 300
         done
     
