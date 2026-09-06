@@ -8,8 +8,8 @@ jobs:
   backup:
     runs-on: windows-latest
     steps:
-    - name: Download Artifact Terakhir
-      uses: actions/download-artifact@v3
+    - name: Download Artifact
+      uses: actions/download-artifact@v4
       with:
         name: khen-backup
         path: C:\khen-restore
@@ -20,49 +20,26 @@ jobs:
         if (Test-Path C:\khen-restore) {
           $date = Get-Date -Format "yyyyMMdd-HHmmss"
           $zipName = "KHEN-BACKUP-$date.zip"
-          Compress-Archive -Path C:\khen-restore\* -DestinationPath "C:\$zipName" -Force -CompressionLevel Optimal
+          Compress-Archive -Path C:\khen-restore\* -DestinationPath "C:\$zipName" -Force
           Write-Host "Backup created: $zipName"
-          Write-Host "Size: $((Get-Item C:\$zipName).Length / 1MB) MB"
-        } else {
-          Write-Host "No data to backup"
         }
     
-    - name: Upload ke GitHub Release
+    - name: Upload ke Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         $date = Get-Date -Format "yyyy-MM-dd"
         $tag = "khen-backup-$date"
         $zipFile = Get-ChildItem -Path C:\*.zip | Select-Object -First 1
-        
         if ($zipFile) {
-          # Buat release
           curl -s -X POST \
             -H "Authorization: token $env:GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/releases \
-            -d "{
-              \"tag_name\": \"$tag\",
-              \"name\": \"KHEN Backup $date\",
-              \"body\": \"Backup otomatis data KHEN RDP\",
-              \"draft\": false,
-              \"prerelease\": false
-            }"
-          
-          # Upload file
+            -d "{\"tag_name\":\"$tag\",\"name\":\"KHEN Backup $date\",\"body\":\"Backup otomatis data KHEN RDP\"}"
           curl -s -X POST \
             -H "Authorization: token $env:GH_TOKEN" \
             -H "Content-Type: application/zip" \
             --data-binary "@$($zipFile.FullName)" \
             "https://uploads.github.com/repos/${{ github.repository }}/releases/$tag/assets?name=$($zipFile.Name)"
-          
-          Write-Host "Backup uploaded to release: $tag"
-        } else {
-          Write-Host "No backup file to upload"
         }
-    
-    - name: Cleanup
-      run: |
-        Remove-Item -Path C:\*.zip -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path C:\khen-restore -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleanup done"
