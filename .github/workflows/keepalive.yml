@@ -8,20 +8,29 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-    - name: Check & Trigger
+    - name: Check RDP Workflow Status
+      id: check
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
           "https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/runs" \
           | jq '.workflow_runs[] | select(.status=="in_progress" or .status=="queued") | .id' | head -1)
+        
         if [ -z "$RUNS" ]; then
-          curl -s -X POST \
-            -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/dispatches \
-            -d '{"ref":"main"}'
-          echo "KHEN RDP restarted"
+          echo "status=down" >> $GITHUB_OUTPUT
+          echo "KHEN RDP not running. Triggering..."
         else
+          echo "status=up" >> $GITHUB_OUTPUT
           echo "KHEN RDP is running (ID: $RUNS)"
         fi
+    
+    - name: Trigger RDP Workflow
+      if: steps.check.outputs.status == 'down'
+      run: |
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${{ github.repository }}/actions/workflows/rdp.yml/dispatches \
+          -d '{"ref":"main"}'
+        echo "KHEN RDP triggered successfully"
