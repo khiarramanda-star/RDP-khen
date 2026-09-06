@@ -3,19 +3,14 @@ on:
   workflow_dispatch:
     inputs:
       windows_version:
-        description: 'Pilih versi Windows'
+        description: 'Pilih versi Windows Gaming'
         required: true
-        default: 'windows-11-pro'
+        default: 'windows-11-gaming'
         type: choice
         options:
-          - windows-11-pro
-          - windows-10-pro
-          - windows-10-22h2
-          - windows-10-21h2
-          - windows-10-20h2
-          - windows-10-1909
-          - windows-8-pro
-          - windows-7-pro
+          - windows-11-gaming
+          - windows-10-gaming
+          - windows-9-gaming
       backup:
         description: 'Aktifkan Backup?'
         required: true
@@ -41,24 +36,16 @@ env:
 jobs:
   gaming:
     runs-on: ${{ 
-      github.event.inputs.windows_version == 'windows-11-pro' && 'windows-latest' ||
-      github.event.inputs.windows_version == 'windows-10-pro' && 'windows-2019' ||
-      github.event.inputs.windows_version == 'windows-10-22h2' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-10-21h2' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-10-20h2' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-10-1909' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-8-pro' && 'windows-2022' ||
-      github.event.inputs.windows_version == 'windows-7-pro' && 'windows-2022'
+      github.event.inputs.windows_version == 'windows-11-gaming' && 'windows-latest' ||
+      github.event.inputs.windows_version == 'windows-10-gaming' && 'windows-2019' ||
+      github.event.inputs.windows_version == 'windows-9-gaming' && 'windows-2016'
     }}
     timeout-minutes: 240
     steps:
-      # ==========================================
-      # 1. FREE STORAGE & RAM
-      # ==========================================
       - name: Free Storage & RAM
         run: |
           Write-Host "========================================"
-          Write-Host "  GAMING ULTIMATE"
+          Write-Host "  RYZEN GAMING ULTIMATE"
           Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
           Write-Host "  Backup : ${{ github.event.inputs.backup }}"
           Write-Host "========================================"
@@ -72,9 +59,6 @@ jobs:
           [System.GC]::Collect()
           Write-Host "Storage & RAM freed"
 
-      # ==========================================
-      # 2. OPTIMASI RAM & VIRTUAL MEMORY
-      # ==========================================
       - name: Optimasi RAM & Pagefile
         run: |
           Write-Host "========================================"
@@ -93,9 +77,6 @@ jobs:
           $pagefile.Put()
           Write-Host "Pagefile 64GB siap"
 
-      # ==========================================
-      # 3. FPS BOOST & GAMING OPTIMIZATION
-      # ==========================================
       - name: FPS Boost & Gaming Optimization
         run: |
           Write-Host "========================================"
@@ -117,23 +98,6 @@ jobs:
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
           Write-Host "FPS Boost applied"
 
-      # ==========================================
-      # 4. NETWORK OPTIMIZER
-      # ==========================================
-      - name: Network Optimizer
-        run: |
-          Write-Host "========================================"
-          Write-Host "  NETWORK OPTIMIZER"
-          Write-Host "========================================"
-          netsh int tcp set global autotuninglevel=normal
-          reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /v TcpAckFrequency /t REG_DWORD /d 1 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces" /v TCPNoDelay /t REG_DWORD /d 1 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters" /v TcpWindowSize /t REG_DWORD /d 65536 /f
-          Write-Host "Network optimized"
-
-      # ==========================================
-      # 5. RESTORE DATA
-      # ==========================================
       - name: Restore Cache
         uses: actions/cache@v4
         id: cache
@@ -152,13 +116,13 @@ jobs:
           path: ${{ env.DATA_PATH }}
         continue-on-error: true
 
-      # ==========================================
-      # 6. SYSTEM INFO
-      # ==========================================
       - name: System Info
         run: |
           Write-Host "========================================"
           Write-Host "  SYSTEM INFO"
+          Write-Host "========================================"
+          Write-Host "Windows : ${{ github.event.inputs.windows_version }}"
+          Write-Host "Backup  : ${{ github.event.inputs.backup }}"
           Write-Host "========================================"
           Get-WmiObject -Class Win32_Processor
           Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
@@ -166,9 +130,6 @@ jobs:
           Get-PSDrive C
           Write-Host "========================================"
 
-      # ==========================================
-      # 7. SETUP RDP
-      # ==========================================
       - name: Setup RDP
         run: |
           Write-Host "========================================"
@@ -210,7 +171,7 @@ jobs:
           }
           $config = @"
           ============================================================
-          KHEN GAMING ULTIMATE
+          RYZEN GAMING ULTIMATE
           ============================================================
           USER      : ${{ env.RDP_USER }}
           PASS      : ${{ env.RDP_PASS }}
@@ -230,9 +191,19 @@ jobs:
           Get-Content "${{ env.DATA_PATH }}\KHEN-CONFIG.txt"
           Write-Host "========================================"
 
-      # ==========================================
-      # 8. TAILSCALE VPN
-      # ==========================================
+      - name: Install Gaming Tools
+        run: |
+          Write-Host "========================================"
+          Write-Host "  INSTALL GAMING TOOLS"
+          Write-Host "========================================"
+          choco install directx -y 2>$null
+          choco install vcredist-all -y 2>$null
+          choco install vulkan-runtime -y 2>$null
+          Write-Host "Installing Steam..."
+          curl -L -o steam.exe https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe
+          Start-Process -FilePath "steam.exe" -ArgumentList "/S" -Wait
+          Write-Host "✅ Gaming tools installed"
+
       - name: Tailscale VPN
         env:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
@@ -257,13 +228,10 @@ jobs:
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
 
-      # ==========================================
-      # 9. KEEP ALIVE 4 JAM
-      # ==========================================
       - name: Keep Alive
         run: |
           Write-Host "========================================"
-          Write-Host "  KHEN GAMING ULTIMATE AKTIF"
+          Write-Host "  RYZEN GAMING ULTIMATE AKTIF"
           Write-Host "========================================"
           Write-Host ""
           Write-Host "  AKSES RDP:"
@@ -290,13 +258,51 @@ jobs:
           while ($counter -lt 48) {
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
-            Write-Host "[$time] KHEN GAMING ACTIVE $counter"
+            Write-Host "[$time] RYZEN GAMING ACTIVE $counter"
             Start-Sleep -Seconds 300
           }
 
       # ==========================================
-      # 10. BACKUP
+      # AUTO CHECK (TANPA REMOVE!)
       # ==========================================
+      - name: Auto Check & Backup
+        run: |
+          Write-Host "========================================"
+          Write-Host "  AUTO CHECK (10 menit sekali)"
+          Write-Host "========================================"
+          
+          $checkCounter = 0
+          while ($true) {
+            $checkCounter++
+            $time = Get-Date -Format "HH:mm:ss"
+            
+            # Cek resource
+            $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
+            $ram = Get-WmiObject -Class Win32_OperatingSystem
+            $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
+            $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
+            
+            # Cek disk
+            $disk = Get-PSDrive C
+            $diskFree = [math]::Round($disk.Free / 1GB, 2)
+            $diskUsed = [math]::Round($disk.Used / 1GB, 2)
+            
+            Write-Host "[$time] AUTO CHECK #$checkCounter"
+            Write-Host "  CPU Load  : $cpu%"
+            Write-Host "  RAM Used  : $ramUsed / $ramTotal GB"
+            Write-Host "  Disk Free : $diskFree GB"
+            Write-Host "  Disk Used : $diskUsed GB"
+            
+            # Backup tiap 30 menit (tanpa remove!)
+            if ($checkCounter % 3 -eq 0) {
+              Write-Host "  📤 Auto Backup..."
+              Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\auto-backup-$checkCounter.zip -Force -ErrorAction SilentlyContinue
+              Write-Host "  ✅ Backup saved: C:\auto-backup-$checkCounter.zip"
+            }
+            
+            Start-Sleep -Seconds 600  # 10 menit
+          }
+
       - name: Upload Backup
         if: env.BACKUP_ENABLED == 'true'
         uses: actions/upload-artifact@v4
@@ -314,9 +320,6 @@ jobs:
           Write-Host "BACKUP = ${{ github.event.inputs.backup }}"
           Write-Host "========================================"
 
-      # ==========================================
-      # 11. AUTO RESTART
-      # ==========================================
       - name: Trigger Next Run
         if: always()
         run: |
