@@ -57,9 +57,8 @@ jobs:
         restore-keys: khen-data-
     
     - name: Restore Artifact
-      if: env.SAVE_BACKUP == 'yes'
+      if: env.SAVE_BACKUP == 'yes' && steps.cache.outputs.cache-hit != 'true'
       uses: actions/download-artifact@v4
-      if: steps.cache.outputs.cache-hit != 'true'
       with:
         name: khen-data-backup
         path: ${{ env.DATA_PATH }}
@@ -178,12 +177,12 @@ jobs:
           exit 1
         }
     
-    - name: Keep Alive & Backup (Conditional)
+    - name: Keep Alive
       run: |
         Write-Host "========================================"
-        Write-Host "  KEEP ALIVE & BACKUP"
+        Write-Host "  KEEP ALIVE"
         Write-Host "========================================"
-        Write-Host "Save backup mode: ${{ env.SAVE_BACKUP }}"
+        Write-Host "Backup mode: ${{ env.SAVE_BACKUP }}"
         Write-Host "========================================"
         
         $counter = 0
@@ -191,14 +190,12 @@ jobs:
           $counter++
           Write-Host "$(Get-Date) - KHEN RDP ACTIVE #$counter"
           
-          # Backup setiap 5 menit (hanya jika SAVE_BACKUP = yes)
           if (${{ env.SAVE_BACKUP }} -eq 'yes' -and ($counter % 1 -eq 0)) {
             Write-Host "📤 Creating backup..."
             $zipPath = "C:\khen-backup-$counter.zip"
             Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath $zipPath -Force -ErrorAction SilentlyContinue
             Write-Host "✅ Backup created: $zipPath"
           } elseif (${{ env.SAVE_BACKUP }} -eq 'no') {
-            # Skip backup, hanya tampilkan status
             if ($counter % 6 -eq 0) {
               Write-Host "ℹ️ Backup disabled (SAVE_BACKUP=no)"
             }
