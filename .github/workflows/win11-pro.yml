@@ -19,6 +19,7 @@ on:
 env:
   RDP_USER: KhenzOfficial
   RDP_PASS: KhenzDev#12
+  RDP_DOMAIN: rdp.xzen.my.id
   ZT_NETWORK: 743993800fc54708
   DATA_PATH: C:\khen-data
 
@@ -34,6 +35,7 @@ jobs:
         Remove-Item -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path "C:\Program Files (x86)\Windows Kits" -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -Path C:\Users\runneradmin\.nuget -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "✅ Cleanup done"
     
     - name: Restore Cache
       uses: actions/cache@v4
@@ -59,12 +61,18 @@ jobs:
         Get-WmiObject -Class Win32_OperatingSystem
         Get-WmiObject -Class Win32_Processor
         Get-WmiObject -Class Win32_PhysicalMemory | Measure-Object -Property Capacity -Sum
+        Write-Host "========================================"
     
     - name: Setup RDP
       run: |
+        Write-Host "========================================"
+        Write-Host "  SETUP RDP"
+        Write-Host "========================================"
+        
         reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server" /v fDenyTSConnections /t REG_DWORD /d 0 /f
         reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v UserAuthentication /t REG_DWORD /d 0 /f
         netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
+        netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
         
         net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no 2>$null
         net localgroup Administrators ${{ env.RDP_USER }} /add 2>$null
@@ -77,9 +85,10 @@ jobs:
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Pictures
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Music
         New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Videos
+        New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }}\Projects
         
         $userPath = "C:\Users\${{ env.RDP_USER }}"
-        @('Desktop','Documents','Downloads','Pictures','Music','Videos') | ForEach-Object {
+        @('Desktop','Documents','Downloads','Pictures','Music','Videos','Projects') | ForEach-Object {
           $target = "${{ env.DATA_PATH }}\$_"
           if (!(Test-Path "$userPath\$_")) {
             cmd /c mklink /J "$userPath\$_" "$target" 2>$null
@@ -97,7 +106,11 @@ jobs:
         ╚═══════════════════════════════════════════╝
         "@ | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
         
-        Write-Host "✅ RDP Active - User: ${{ env.RDP_USER }} | Pass: ${{ env.RDP_PASS }}"
+        Write-Host ""
+        Write-Host "✅ RDP ACTIVE"
+        Write-Host "User: ${{ env.RDP_USER }}"
+        Write-Host "Pass: ${{ env.RDP_PASS }}"
+        Write-Host "========================================"
     
     - name: ZeroTier VPN
       run: |
@@ -106,7 +119,10 @@ jobs:
         Write-Host "========================================"
         
         curl -L -o ZeroTier.msi https://download.zerotier.com/dist/ZeroTier%20One.msi
-        if (-not (Test-Path ZeroTier.msi)) { exit 0 }
+        if (-not (Test-Path ZeroTier.msi)) { 
+          Write-Host "⚠️ Download gagal, skip VPN..."
+          exit 0
+        }
         
         msiexec /i ZeroTier.msi /quiet /norestart
         Start-Sleep -Seconds 15
@@ -119,13 +135,17 @@ jobs:
         foreach ($p in $ztPaths) {
           if (Test-Path $p) { $zt = $p; break }
         }
-        if (-not $zt) { exit 0 }
+        if (-not $zt) { 
+          Write-Host "⚠️ ZeroTier not found, skip VPN..."
+          exit 0
+        }
         
         & $zt -q join ${{ env.ZT_NETWORK }}
         Start-Sleep -Seconds 15
         
         $ip = & $zt -q listnetworks | Select-String ${{ env.ZT_NETWORK }} | ForEach-Object { ($_ -split ' ')[2] }
         
+        Write-Host ""
         Write-Host "========================================"
         Write-Host "  ✅ ZEROTIER ACTIVE"
         Write-Host "========================================"
