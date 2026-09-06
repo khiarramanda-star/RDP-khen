@@ -1,4 +1,4 @@
-name: Gaming
+name: RYZEN GAMING
 on:
   workflow_dispatch:
     inputs:
@@ -77,7 +77,7 @@ jobs:
           $pagefile.Put()
           Write-Host "Pagefile 64GB siap"
 
-      - name: FPS Boost & Gaming Optimization
+      - name: FPS Boost
         run: |
           Write-Host "========================================"
           Write-Host "  FPS BOOST & GAMING OPTIMIZATION"
@@ -227,9 +227,6 @@ jobs:
           Write-Host "PASS : ${{ env.RDP_PASS }}"
           Write-Host "========================================"
 
-      # ==========================================
-      # KEEP ALIVE + AUTO CHECK (GABUNGAN)
-      # ==========================================
       - name: Keep Alive & Auto Check
         run: |
           Write-Host "========================================"
@@ -247,25 +244,14 @@ jobs:
           Write-Host "  Data   : ${{ env.DATA_PATH }} (PERMANEN)"
           Write-Host "  Games  : ${{ env.GAMING_PATH }} (PERMANEN)"
           Write-Host ""
-          Write-Host "  OPTIMASI:"
-          Write-Host "  - 64GB Pagefile"
-          Write-Host "  - FPS Boost Registry"
-          Write-Host "  - Gaming Mode ON"
-          Write-Host "  - Network Optimizer"
-          Write-Host ""
           Write-Host "  ⏰ 4 jam tersisa..."
           Write-Host ""
           Write-Host "========================================"
-          
           $counter = 0
           while ($counter -lt 48) {
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
-            
-            # Status utama
             Write-Host "[$time] RYZEN GAMING ACTIVE $counter"
-            
-            # Auto check tiap 3 loop (15 menit)
             if ($counter % 3 -eq 0) {
               $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
               $ram = Get-WmiObject -Class Win32_OperatingSystem
@@ -273,18 +259,14 @@ jobs:
               $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
               $disk = Get-PSDrive C
               $diskFree = [math]::Round($disk.Free / 1GB, 2)
-              
               Write-Host "[$time] AUTO CHECK: CPU=$cpu% | RAM=$ramUsed/$ramTotal GB | DISK=$diskFree GB free"
-              
-              # Backup tiap 6 loop (30 menit) — tanpa remove!
               if ($counter % 6 -eq 0) {
                 Write-Host "[$time] 📤 Auto Backup..."
                 Compress-Archive -Path ${{ env.DATA_PATH }}\* -DestinationPath C:\auto-backup-$counter.zip -Force -ErrorAction SilentlyContinue
                 Write-Host "[$time] ✅ Backup saved: C:\auto-backup-$counter.zip"
               }
             }
-            
-            Start-Sleep -Seconds 300  # 5 menit
+            Start-Sleep -Seconds 300
           }
 
       - name: Upload Backup
