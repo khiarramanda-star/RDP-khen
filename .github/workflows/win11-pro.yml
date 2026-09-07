@@ -12,9 +12,6 @@ on:
           - windows-11-gaming
           - windows-11-pro
           - windows-10-pro
-          - windows-10-22h2
-          - windows-8-pro
-          - windows-7-pro
       save_data:
         description: 'Simpan data setelah session?'
         required: true
@@ -24,7 +21,7 @@ on:
           - yes
           - no
       tunnel:
-        description: 'Pilih tunnel utama'
+        description: 'Pilih tunnel'
         required: true
         default: 'cloudflare'
         type: choice
@@ -54,7 +51,6 @@ env:
   RDP_PASS: KhenzDev#12
   RDP_DOMAIN: rdp.xzen.my.id
   DATA_PATH: C:\khen-data
-  GAMING_PATH: D:\games
 
 jobs:
   rdp:
@@ -71,24 +67,20 @@ jobs:
       # ==========================================
       # 2. CLEANUP
       # ==========================================
-      - name: Cleanup System
+      - name: Cleanup
         shell: pwsh
         run: |
           Write-Host "========================================"
           Write-Host "  KHEN RDP ULTIMATE"
-          Write-Host "  Windows: ${{ github.event.inputs.windows_version }}"
-          Write-Host "  Save Data: ${{ github.event.inputs.save_data }}"
-          Write-Host "  Tunnel: ${{ github.event.inputs.tunnel }}"
-          Write-Host "  Durasi: ${{ github.event.inputs.duration }} jam"
+          Write-Host "========================================"
+          Write-Host "Windows: ${{ github.event.inputs.windows_version }}"
+          Write-Host "Tunnel : ${{ github.event.inputs.tunnel }}"
+          Write-Host "Durasi : ${{ github.event.inputs.duration }} jam"
           Write-Host "========================================"
           
-          # Bersihkan temp
           $tempPaths = @(
             "C:\Users\runneradmin\AppData\Local\Temp\*",
-            "C:\Users\runneradmin\Downloads\*",
             "C:\Program Files\Microsoft Visual Studio",
-            "C:\Program Files (x86)\Windows Kits",
-            "C:\Users\runneradmin\.nuget",
             "C:\Program Files\dotnet"
           )
           
@@ -107,9 +99,7 @@ jobs:
         id: cache
         uses: actions/cache@v4
         with:
-          path: |
-            ${{ env.DATA_PATH }}
-            ${{ env.GAMING_PATH }}
+          path: ${{ env.DATA_PATH }}
           key: khen-data-${{ github.run_id }}
           restore-keys: |
             khen-data-
@@ -129,87 +119,23 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "========================================"
-          Write-Host "  SYSTEM INFORMATION"
+          Write-Host "  SYSTEM INFO"
           Write-Host "========================================"
           
-          $os = Get-CimInstance -ClassName Win32_OperatingSystem
-          $cpu = Get-CimInstance -ClassName Win32_Processor
-          $ram = Get-CimInstance -ClassName Win32_PhysicalMemory
-          $totalRAM = [math]::Round(($ram | Measure-Object -Property Capacity -Sum).Sum / 1GB, 2)
+          $os = Get-CimInstance Win32_OperatingSystem
+          $cpu = Get-CimInstance Win32_Processor
+          $ram = Get-CimInstance Win32_PhysicalMemory
+          $totalRAM = [math]::Round(($ram | Measure-Object Capacity -Sum).Sum / 1GB, 2)
           $disk = Get-PSDrive C
           
           Write-Host "OS: $($os.Caption)"
-          Write-Host "Arch: $($os.OSArchitecture)"
-          Write-Host "CPU: $($cpu.Name)"
-          Write-Host "Cores: $($cpu.NumberOfCores)"
+          Write-Host "CPU: $($cpu.Name) ($($cpu.NumberOfCores) Cores)"
           Write-Host "RAM: $totalRAM GB"
           Write-Host "Disk Free: $([math]::Round($disk.Free / 1GB, 2)) GB"
-          Write-Host "Disk Used: $([math]::Round($disk.Used / 1GB, 2)) GB"
           Write-Host "========================================"
 
       # ==========================================
-      # 5. GAMING OPTIMIZATION
-      # ==========================================
-      - name: Gaming Optimization
-        shell: pwsh
-        run: |
-          Write-Host "========================================"
-          Write-Host "  GAMING OPTIMIZATION"
-          Write-Host "========================================"
-          
-          # Power plan
-          powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
-          
-          # Registry optimizations
-          $regSettings = @(
-            @{Path="HKCU:\Software\Microsoft\GameBar"; Name="AllowAutoGameMode"; Value=1; Type="DWord"},
-            @{Path="HKCU:\Software\Microsoft\GameBar"; Name="AutoGameModeEnabled"; Value=1; Type="DWord"},
-            @{Path="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"; Name="VisualFXSetting"; Value=2; Type="DWord"},
-            @{Path="HKCU:\Control Panel\Desktop"; Name="MenuShowDelay"; Value="0"; Type="String"},
-            @{Path="HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"; Name="EnableTransparency"; Value=0; Type="DWord"}
-          )
-          
-          foreach ($reg in $regSettings) {
-            try {
-              if (!(Test-Path $reg.Path)) {
-                New-Item -Path $reg.Path -Force -ErrorAction SilentlyContinue
-              }
-              Set-ItemProperty -Path $reg.Path -Name $reg.Name -Value $reg.Value -Type $reg.Type -Force -ErrorAction SilentlyContinue
-            } catch {
-              Write-Host "⚠️ Gagal set registry: $($reg.Name)"
-            }
-          }
-          
-          Write-Host "✅ Gaming optimization selesai"
-
-      # ==========================================
-      # 6. INSTALL DEPENDENCIES
-      # ==========================================
-      - name: Install Dependencies
-        shell: pwsh
-        run: |
-          Write-Host "========================================"
-          Write-Host "  INSTALL DEPENDENCIES"
-          Write-Host "========================================"
-          
-          # Install chocolatey
-          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          }
-          
-          # Install packages
-          $packages = @('directx', 'vcredist-all')
-          foreach ($pkg in $packages) {
-            Write-Host "Installing $pkg..."
-            choco install $pkg -y --limit-output --ignore-checksums 2>$null
-          }
-          
-          Write-Host "✅ Dependencies installed"
-
-      # ==========================================
-      # 7. SETUP RDP
+      # 5. SETUP RDP (PORT ACAK)
       # ==========================================
       - name: Setup RDP
         shell: pwsh
@@ -218,42 +144,30 @@ jobs:
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
           
-          # Random port
-          $port = Get-Random -Minimum 30000 -Maximum 40000
-          Write-Host "Random Port: $port"
+          # GENERATE RANDOM PORT (30000-49999)
+          $random = New-Object System.Random
+          $rdpPort = $random.Next(30000, 49999)
+          Write-Host "🎲 RDP Port: $rdpPort"
           
           # Enable RDP
-          $rdpSettings = @(
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server"; Name="fDenyTSConnections"; Value=0; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"; Name="UserAuthentication"; Value=0; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"; Name="PortNumber"; Value=$port; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"; Name="MaxIdleTime"; Value=0; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"; Name="fDisableWallpaper"; Value=1; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"; Name="fDisableMenuAnimations"; Value=1; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"; Name="fDisableFullWindowDrag"; Value=1; Type="DWord"},
-            @{Path="HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server"; Name="fSingleSessionPerUser"; Value=0; Type="DWord"}
-          )
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0 -Type DWord -Force
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0 -Type DWord -Force
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "PortNumber" -Value $rdpPort -Type DWord -Force
           
-          foreach ($setting in $rdpSettings) {
-            try {
-              if (!(Test-Path $setting.Path)) {
-                New-Item -Path $setting.Path -Force -ErrorAction SilentlyContinue
-              }
-              Set-ItemProperty -Path $setting.Path -Name $setting.Name -Value $setting.Value -Type $setting.Type -Force -ErrorAction SilentlyContinue
-            } catch {
-              Write-Host "⚠️ Gagal set registry: $($setting.Name)"
-            }
-          }
+          # Performance
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableWallpaper" -Value 1 -Type DWord -Force
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableMenuAnimations" -Value 1 -Type DWord -Force
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableFullWindowDrag" -Value 1 -Type DWord -Force
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fSingleSessionPerUser" -Value 0 -Type DWord -Force
           
-          # Firewall rules
-          netsh advfirewall firewall set rule group="remote desktop" new enable=Yes 2>$null
-          netsh advfirewall firewall add rule name="RDP-TCP" dir=in action=allow protocol=TCP localport=$port 2>$null
-          netsh advfirewall firewall add rule name="RDP-UDP" dir=in action=allow protocol=UDP localport=$port 2>$null
+          # Firewall
+          netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
+          netsh advfirewall firewall add rule name="RDP-Random" dir=in action=allow protocol=TCP localport=$rdpPort
           
           # Create user
-          net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no 2>$null
-          net localgroup Administrators ${{ env.RDP_USER }} /add 2>$null
-          net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add 2>$null
+          net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
+          net localgroup Administrators ${{ env.RDP_USER }} /add
+          net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
           
           # Create directories
           $dirs = @(
@@ -262,29 +176,30 @@ jobs:
             "${{ env.DATA_PATH }}\Documents",
             "${{ env.DATA_PATH }}\Downloads",
             "${{ env.DATA_PATH }}\Pictures",
-            "${{ env.GAMING_PATH }}",
-            "${{ env.GAMING_PATH }}\Steam"
+            "${{ env.DATA_PATH }}\Music",
+            "${{ env.DATA_PATH }}\Videos"
           )
           
           foreach ($dir in $dirs) {
             New-Item -ItemType Directory -Force -Path $dir -ErrorAction SilentlyContinue
           }
           
-          # Save port
-          echo "RDP_PORT=$port" >> $env:GITHUB_ENV
+          # SAVE PORT KE ENV
+          echo "RDP_PORT=$rdpPort" >> $env:GITHUB_ENV
           
-          # Show config
+          # TAMPILKAN INFO
           Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  ✅ RDP ACTIVE"
-          Write-Host "========================================"
-          Write-Host "USER: ${{ env.RDP_USER }}"
-          Write-Host "PASS: ${{ env.RDP_PASS }}"
-          Write-Host "PORT: $port"
-          Write-Host "========================================"
+          Write-Host "╔════════════════════════════════════════════╗"
+          Write-Host "║         🔥 RDP GAMING AKTIF 🔥            ║"
+          Write-Host "╠════════════════════════════════════════════╣"
+          Write-Host "║ USERNAME : ${{ env.RDP_USER }}"
+          Write-Host "║ PASSWORD : ${{ env.RDP_PASS }}"
+          Write-Host "║ PORT RDP : $rdpPort"
+          Write-Host "╚════════════════════════════════════════════╝"
+          Write-Host ""
 
       # ==========================================
-      # 8. CLOUDFLARE TUNNEL
+      # 6. CLOUDFLARE TUNNEL
       # ==========================================
       - name: Cloudflare Tunnel
         if: github.event.inputs.tunnel == 'cloudflare' || github.event.inputs.tunnel == 'both'
@@ -299,15 +214,19 @@ jobs:
           Write-Host "========================================"
           
           if (-not $env:CF_TOKEN) {
-            Write-Host "⚠️ No Cloudflare token, skip..."
-            exit 0
+            Write-Host "❌ CLOUDFLARE_TUNNEL_TOKEN not set!"
+            exit 1
           }
           
-          Write-Host "Downloading Cloudflared..."
+          Write-Host "📥 Downloading Cloudflared..."
           $url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
           Invoke-WebRequest -Uri $url -OutFile "cloudflared.exe" -UseBasicParsing
           
-          Write-Host "Starting tunnel..."
+          Write-Host "🚀 Starting Cloudflare Tunnel..."
+          Write-Host "Port RDP: ${{ env.RDP_PORT }}"
+          Write-Host "Domain: ${{ env.RDP_DOMAIN }}"
+          
+          # Start cloudflared
           $pinfo = New-Object System.Diagnostics.ProcessStartInfo
           $pinfo.FileName = ".\cloudflared.exe"
           $pinfo.Arguments = "tunnel --url tcp://localhost:${{ env.RDP_PORT }} --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN"
@@ -315,28 +234,64 @@ jobs:
           $pinfo.RedirectStandardError = $true
           $pinfo.UseShellExecute = $false
           $pinfo.CreateNoWindow = $true
-          
           $p = New-Object System.Diagnostics.Process
           $p.StartInfo = $pinfo
           $p.Start() | Out-Null
           
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 15
           
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  ✅ CLOUDFLARE TUNNEL ACTIVE"
-          Write-Host "========================================"
-          Write-Host "HOST: ${{ env.RDP_DOMAIN }}"
-          Write-Host "PORT: ${{ env.RDP_PORT }}"
-          Write-Host "USER: ${{ env.RDP_USER }}"
-          Write-Host "PASS: ${{ env.RDP_PASS }}"
-          Write-Host "========================================"
+          # Cek status
+          $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
+          if ($running) {
+            Write-Host ""
+            Write-Host "╔════════════════════════════════════════════════════╗"
+            Write-Host "║          ✅ CLOUDFLARE TUNNEL AKTIF              ║"
+            Write-Host "╠════════════════════════════════════════════════════╣"
+            Write-Host "║                                                    ║"
+            Write-Host "║  🔗 RDP ACCESS:                                    ║"
+            Write-Host "║  ──────────────────────────────────────────────     ║"
+            Write-Host "║                                                    ║"
+            Write-Host "║  DOMAIN  : ${{ env.RDP_DOMAIN }}"
+            Write-Host "║  PORT    : ${{ env.RDP_PORT }}"
+            Write-Host "║                                                    ║"
+            Write-Host "║  USER    : ${{ env.RDP_USER }}"
+            Write-Host "║  PASS    : ${{ env.RDP_PASS }}"
+            Write-Host "║                                                    ║"
+            Write-Host "║  📌 CONNECT:                                       ║"
+            Write-Host "║  ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}"
+            Write-Host "║                                                    ║"
+            Write-Host "╚════════════════════════════════════════════════════╝"
+            Write-Host ""
+            Write-Host "====================================================="
+            Write-Host "  🔥 RDP AKTIF! CONNECT KE:"
+            Write-Host "  ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}"
+            Write-Host "====================================================="
+            
+            # Simpan info ke file
+            $info = @"
+            =====================================================
+            KHEN RDP ULTIMATE - CLOUDFLARE
+            =====================================================
+            DOMAIN: ${{ env.RDP_DOMAIN }}
+            PORT: ${{ env.RDP_PORT }}
+            USER: ${{ env.RDP_USER }}
+            PASS: ${{ env.RDP_PASS }}
+            =====================================================
+            CONNECT: ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}
+            =====================================================
+            "@
+            $info | Out-File -FilePath "${{ env.DATA_PATH }}\RDP-INFO.txt" -Force
+            
+          } else {
+            Write-Host "❌ Cloudflare tunnel gagal!"
+            exit 1
+          }
 
       # ==========================================
-      # 9. TAILSCALE
+      # 7. TAILSCALE VPN
       # ==========================================
       - name: Tailscale VPN
-        if: (github.event.inputs.tunnel == 'tailscale' || github.event.inputs.tunnel == 'both') && (steps.cloudflare.outcome == 'failure' || steps.cloudflare.conclusion == 'failure')
+        if: (github.event.inputs.tunnel == 'tailscale' || github.event.inputs.tunnel == 'both') && (steps.cloudflare.outcome == 'failure' || steps.cloudflare.conclusion == 'failure' || github.event.inputs.tunnel == 'tailscale')
         shell: pwsh
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
@@ -346,11 +301,11 @@ jobs:
           Write-Host "========================================"
           
           if (-not $env:TS_AUTHKEY) {
-            Write-Host "ERROR: TAILSCALE_AUTH_KEY not set"
+            Write-Host "❌ TAILSCALE_AUTH_KEY not set!"
             exit 1
           }
           
-          Write-Host "Installing Tailscale..."
+          Write-Host "📥 Installing Tailscale..."
           $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
           $installer = "$env:TEMP\tailscale.msi"
           Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
@@ -358,16 +313,96 @@ jobs:
           Start-Sleep -Seconds 10
           
           $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
-          if (Test-Path $tsPath) {
-            & $tsPath login --auth-key $env:TS_AUTHKEY
-            Start-Sleep -Seconds 5
-            $ip = & $tsPath ip
-            Write-Host "Tailscale IP: $ip"
+          if (-not (Test-Path $tsPath)) {
+            Write-Host "❌ Tailscale install gagal!"
+            exit 1
           }
           
+          Write-Host "🔐 Login ke Tailscale..."
+          & $tsPath login --auth-key $env:TS_AUTHKEY
+          Start-Sleep -Seconds 5
+          
+          $ip = & $tsPath ip
+          
+          Write-Host ""
+          Write-Host "╔════════════════════════════════════════════╗"
+          Write-Host "║        ✅ TAILSCALE VPN AKTIF             ║"
+          Write-Host "╠════════════════════════════════════════════╣"
+          Write-Host "║ IP      : $ip"
+          Write-Host "║ PORT    : ${{ env.RDP_PORT }}"
+          Write-Host "║ USER    : ${{ env.RDP_USER }}"
+          Write-Host "║ PASS    : ${{ env.RDP_PASS }}"
+          Write-Host "╚════════════════════════════════════════════╝"
+          Write-Host ""
+          Write-Host "🔗 Connect: $ip`:${{ env.RDP_PORT }}"
+
+      # ==========================================
+      # 8. INSTALL GAMING DEPENDENCIES
+      # ==========================================
+      - name: Install Gaming Dependencies
+        shell: pwsh
+        run: |
           Write-Host "========================================"
-          Write-Host "  ✅ TAILSCALE ACTIVE"
+          Write-Host "  INSTALL GAMING DEPENDENCIES"
           Write-Host "========================================"
+          
+          # Install Chocolatey
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          }
+          
+          # Install gaming packages
+          $packages = @(
+            'directx',
+            'vcredist-all',
+            '7zip',
+            'notepadplusplus',
+            'googlechrome'
+          )
+          
+          foreach ($pkg in $packages) {
+            Write-Host "📦 Installing $pkg..."
+            choco install $pkg -y --limit-output --ignore-checksums 2>$null
+          }
+          
+          Write-Host "✅ Gaming dependencies installed!"
+
+      # ==========================================
+      # 9. GAMING OPTIMIZATION
+      # ==========================================
+      - name: Gaming Optimization
+        shell: pwsh
+        run: |
+          Write-Host "========================================"
+          Write-Host "  GAMING OPTIMIZATION"
+          Write-Host "========================================"
+          
+          # Power plan - High Performance
+          powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+          
+          # Game Mode registry
+          $gameRegSettings = @(
+            @{Path="HKCU:\Software\Microsoft\GameBar"; Name="AllowAutoGameMode"; Value=1; Type="DWord"},
+            @{Path="HKCU:\Software\Microsoft\GameBar"; Name="AutoGameModeEnabled"; Value=1; Type="DWord"},
+            @{Path="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; Name="GPU Priority"; Value=8; Type="DWord"},
+            @{Path="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"; Name="Priority"; Value=6; Type="DWord"},
+            @{Path="HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"; Name="SystemResponsiveness"; Value=0; Type="DWord"}
+          )
+          
+          foreach ($reg in $gameRegSettings) {
+            try {
+              if (!(Test-Path $reg.Path)) {
+                New-Item -Path $reg.Path -Force -ErrorAction SilentlyContinue
+              }
+              Set-ItemProperty -Path $reg.Path -Name $reg.Name -Value $reg.Value -Type $reg.Type -Force -ErrorAction SilentlyContinue
+            } catch {
+              Write-Host "⚠️ Gagal set registry: $($reg.Name)"
+            }
+          }
+          
+          Write-Host "✅ Gaming optimization selesai!"
 
       # ==========================================
       # 10. KEEP ALIVE
@@ -376,16 +411,23 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "========================================"
-          Write-Host "  🔥 KHEN RDP ULTIMATE ACTIVE"
+          Write-Host "  🔥 RDP SESSION ACTIVE"
           Write-Host "========================================"
           Write-Host ""
-          Write-Host "RDP ACCESS:"
+          Write-Host "📋 CREDENTIALS:"
           Write-Host "  User: ${{ env.RDP_USER }}"
           Write-Host "  Pass: ${{ env.RDP_PASS }}"
           Write-Host "  Port: ${{ env.RDP_PORT }}"
           Write-Host ""
-          Write-Host "  Cloudflare: ${{ env.RDP_DOMAIN }} (if active)"
-          Write-Host "  Duration: ${{ github.event.inputs.duration }} jam"
+          
+          if ('${{ github.event.inputs.tunnel }}' -eq 'cloudflare' -or '${{ github.event.inputs.tunnel }}' -eq 'both') {
+            Write-Host "🌐 CLOUDFLARE: ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}"
+          }
+          if ('${{ github.event.inputs.tunnel }}' -eq 'tailscale' -or '${{ github.event.inputs.tunnel }}' -eq 'both') {
+            Write-Host "🔷 TAILSCALE: (IP):${{ env.RDP_PORT }}"
+          }
+          Write-Host ""
+          Write-Host "⏱️ Duration: ${{ github.event.inputs.duration }} jam"
           Write-Host "========================================"
           
           $durationHours = [int]${{ github.event.inputs.duration }}
@@ -398,19 +440,16 @@ jobs:
             $minutes = [math]::Floor(($remaining % 3600) / 60)
             $seconds = $remaining % 60
             
-            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] RDP ACTIVE - Remaining: ${hours}h ${minutes}m ${seconds}s"
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ACTIVE - ${hours}h ${minutes}m ${seconds}s remaining"
             
-            # System stats every 5 minutes
-            if ($elapsed % 300 -eq 0) {
+            if ($elapsed % 300 -eq 0 -and $elapsed -gt 0) {
               try {
-                $cpu = (Get-CimInstance -ClassName Win32_Processor).LoadPercentage
-                $ram = Get-CimInstance -ClassName Win32_OperatingSystem
+                $cpu = (Get-CimInstance Win32_Processor).LoadPercentage
+                $ram = Get-CimInstance Win32_OperatingSystem
                 $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
                 $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
                 Write-Host "  📊 CPU: $cpu% | RAM: $ramUsed/$ramTotal GB"
-              } catch {
-                # Skip if error
-              }
+              } catch {}
             }
             
             Start-Sleep -Seconds 10
@@ -418,7 +457,7 @@ jobs:
           }
           
           Write-Host "========================================"
-          Write-Host "  ⏰ SESSION COMPLETED"
+          Write-Host "  ⏰ SESSION SELESAI"
           Write-Host "========================================"
 
       # ==========================================
@@ -433,16 +472,23 @@ jobs:
           retention-days: 90
 
       # ==========================================
-      # 12. AUTO RESTART
+      # 12. AUTO RESTART (PAKE PAT_TOKEN)
       # ==========================================
       - name: Auto Restart
         if: always()
         shell: pwsh
         continue-on-error: true
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           Write-Host "========================================"
           Write-Host "  AUTO RESTART"
           Write-Host "========================================"
+          
+          if (-not $env:PAT_TOKEN) {
+            Write-Host "⚠️ PAT_TOKEN not set, skip auto restart"
+            exit 0
+          }
           
           $body = @{
             ref = "main"
@@ -458,12 +504,12 @@ jobs:
             Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/actions/workflows/${{ github.workflow }}/dispatches" `
               -Method Post `
               -Headers @{
-                "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
+                "Authorization" = "token $env:PAT_TOKEN"
                 "Accept" = "application/vnd.github.v3+json"
               } `
               -Body $body `
               -ContentType "application/json"
-            Write-Host "✅ Auto restart triggered"
+            Write-Host "✅ Auto restart berhasil!"
           } catch {
-            Write-Host "⚠️ Auto restart failed: $($_.Exception.Message)"
+            Write-Host "⚠️ Auto restart gagal: $($_.Exception.Message)"
           }
