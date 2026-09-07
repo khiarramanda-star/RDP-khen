@@ -141,6 +141,7 @@ jobs:
           Write-Host "✅ Render engine installed"
 
       - name: Setup RDP
+        id: rdp_setup
         run: |
           Write-Host "========================================"
           Write-Host "  SETUP RDP"
@@ -217,13 +218,10 @@ jobs:
           Write-Host "✅ RDP ACTIVE"
           Write-Host "PORT: $port"
 
-      # ==========================================
-      # INSTALL CREDENTIALS KE PC
-      # ==========================================
-      - name: Install Credentials to PC
+      - name: Install Credentials
         run: |
           Write-Host "========================================"
-          Write-Host "  INSTALL CREDENTIALS KE PC"
+          Write-Host "  INSTALL CREDENTIALS"
           Write-Host "========================================"
           
           $rdpContent = @"
@@ -285,10 +283,7 @@ jobs:
           $rdpContent | Out-File -FilePath $rdpPath -Encoding ASCII -Force
           Copy-Item -Path $rdpPath -Destination "${{ env.DATA_PATH }}\KHEN-RDP.rdp" -Force
           
-          Write-Host "✅ Credentials installed"
-          Write-Host "  - File: KHEN-RDP.rdp"
-          Write-Host "  - Double click to connect!"
-          Write-Host "========================================"
+          Write-Host "✅ RDP file created: KHEN-RDP.rdp"
 
       - name: Cloudflare Tunnel
         if: github.event.inputs.tunnel == 'cloudflare' || github.event.inputs.tunnel == 'both'
@@ -296,6 +291,7 @@ jobs:
         continue-on-error: true
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          RDP_PORT: ${{ env.RDP_PORT }}
         run: |
           Write-Host "========================================"
           Write-Host "  CLOUDFLARE TUNNEL"
@@ -303,23 +299,26 @@ jobs:
           
           if (-not $env:CF_TOKEN) { Write-Host "⚠️ No token, skip..."; exit 0 }
           
+          Write-Host "PORT: $env:RDP_PORT"
+          
           curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:${{ env.RDP_PORT }} --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
+          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:$env:RDP_PORT --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
           
           Start-Sleep -Seconds 10
           $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
           if ($running) {
             Write-Host "✅ CLOUDFLARE ACTIVE"
-            Write-Host "HOST: ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}"
+            Write-Host "HOST: ${{ env.RDP_DOMAIN }}:$env:RDP_PORT"
           } else {
             Write-Host "❌ Cloudflare gagal"
             exit 1
           }
 
-      - name: Tailscale VPN (Fallback)
+      - name: Tailscale VPN
         if: (github.event.inputs.tunnel == 'tailscale' || github.event.inputs.tunnel == 'both') && (steps.cloudflare.outcome == 'failure' || steps.cloudflare.conclusion == 'failure')
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          RDP_PORT: ${{ env.RDP_PORT }}
         run: |
           Write-Host "========================================"
           Write-Host "  TAILSCALE VPN (FALLBACK)"
@@ -341,7 +340,7 @@ jobs:
           
           Write-Host "✅ TAILSCALE ACTIVE (FALLBACK)"
           Write-Host "IP   : $ip"
-          Write-Host "PORT : ${{ env.RDP_PORT }}"
+          Write-Host "PORT : $env:RDP_PORT"
           Write-Host "USER : ${{ env.RDP_USER }}"
           Write-Host "PASS : ${{ env.RDP_PASS }}"
 
