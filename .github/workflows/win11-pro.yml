@@ -15,7 +15,7 @@ on:
           - windows-8-pro
           - windows-7-pro
       save_data:
-        description: 'Simpan data setelah session?'
+        description: 'Simpan data?'
         required: true
         default: 'yes'
         type: choice
@@ -23,7 +23,7 @@ on:
           - yes
           - no
       tunnel:
-        description: 'Pilih tunnel utama'
+        description: 'Pilih tunnel'
         required: true
         default: 'cloudflare'
         type: choice
@@ -32,7 +32,7 @@ on:
           - tailscale
           - both
       duration:
-        description: 'Durasi session (jam)'
+        description: 'Durasi (jam)'
         required: true
         default: '6'
         type: choice
@@ -70,7 +70,7 @@ jobs:
     }}
     timeout-minutes: ${{ env.DURATION_MINUTES }}
     steps:
-      - name: Cleanup & Prepare
+      - name: Cleanup
         run: |
           Write-Host "========================================"
           Write-Host "  KHEN RDP ULTIMATE"
@@ -131,22 +131,21 @@ jobs:
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v GPU Priority /t REG_DWORD /d 8 /f
           reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f
           reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012008010000000 /f
-          reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f
           Write-Host "✅ Gaming Optimization applied"
 
       - name: Install Render Engine
         run: |
-          choco install directx vulkan-runtime opengl vcredist-all gpu-z -y 2>$null
+          choco install directx vulkan-runtime opengl vcredist-all -y 2>$null
           Write-Host "✅ Render engine installed"
 
-      - name: Setup RDP
+      - name: Setup RDP & Random Port
         id: rdp_setup
         run: |
           Write-Host "========================================"
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
           
+          # Random port
           $port = Get-Random -Minimum 40000 -Maximum 49999
           Write-Host "Random Port: $port"
           
@@ -155,7 +154,6 @@ jobs:
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v PortNumber /t REG_DWORD /d $port /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v MaxIdleTime /t REG_DWORD /d 0 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableWallpaper /t REG_DWORD /d 1 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fDisableMenuAnimations /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableWddmDriver /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableRemoteFx /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" /v fEnableH264 /t REG_DWORD /d 1 /f
@@ -195,7 +193,8 @@ jobs:
             cmd /c mklink /J "$userPath\$folder" "$target"
           }
           
-          echo "RDP_PORT=$port" >> $env:GITHUB_ENV
+          # Simpan port ke output (biar bisa dipake step lain)
+          Write-Host "RDP_PORT=$port" >> $env:GITHUB_OUTPUT
           
           $config = @"
           ============================================================
@@ -215,13 +214,12 @@ jobs:
           "@
           $config | Out-File -FilePath "${{ env.DATA_PATH }}\KHEN-CONFIG.txt" -Force
           
-          Write-Host "✅ RDP ACTIVE"
-          Write-Host "PORT: $port"
+          Write-Host "✅ RDP ACTIVE (Port: $port)"
 
-      - name: Install Credentials
+      - name: Create RDP File
         run: |
           Write-Host "========================================"
-          Write-Host "  INSTALL CREDENTIALS"
+          Write-Host "  CREATE RDP FILE"
           Write-Host "========================================"
           
           $rdpContent = @"
@@ -248,7 +246,7 @@ jobs:
           disable themes:i:1
           disable cursor setting:i:1
           bitmapcachepersistenable:i:1
-          full address:s:${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}
+          full address:s:${{ env.RDP_DOMAIN }}:${{ steps.rdp_setup.outputs.RDP_PORT }}
           username:s:${{ env.RDP_USER }}
           promptcredentialonce:i:1
           authentication level:i:0
@@ -279,10 +277,8 @@ jobs:
           prompt for credentials on client:i:0
           "@
           
-          $rdpPath = "C:\Users\${{ env.RDP_USER }}\Desktop\KHEN-RDP.rdp"
+          $rdpPath = "${{ env.DATA_PATH }}\KHEN-RDP.rdp"
           $rdpContent | Out-File -FilePath $rdpPath -Encoding ASCII -Force
-          Copy-Item -Path $rdpPath -Destination "${{ env.DATA_PATH }}\KHEN-RDP.rdp" -Force
-          
           Write-Host "✅ RDP file created: KHEN-RDP.rdp"
 
       - name: Cloudflare Tunnel
@@ -291,7 +287,6 @@ jobs:
         continue-on-error: true
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-          RDP_PORT: ${{ env.RDP_PORT }}
         run: |
           Write-Host "========================================"
           Write-Host "  CLOUDFLARE TUNNEL"
@@ -299,16 +294,17 @@ jobs:
           
           if (-not $env:CF_TOKEN) { Write-Host "⚠️ No token, skip..."; exit 0 }
           
-          Write-Host "PORT: $env:RDP_PORT"
+          $port = "${{ steps.rdp_setup.outputs.RDP_PORT }}"
+          Write-Host "PORT: $port"
           
           curl -s -L -o cloudflared.exe https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
-          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:$env:RDP_PORT --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
+          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:$port --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN" -WindowStyle Hidden -PassThru
           
           Start-Sleep -Seconds 10
           $running = Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue
           if ($running) {
             Write-Host "✅ CLOUDFLARE ACTIVE"
-            Write-Host "HOST: ${{ env.RDP_DOMAIN }}:$env:RDP_PORT"
+            Write-Host "HOST: ${{ env.RDP_DOMAIN }}:$port"
           } else {
             Write-Host "❌ Cloudflare gagal"
             exit 1
@@ -318,13 +314,14 @@ jobs:
         if: (github.event.inputs.tunnel == 'tailscale' || github.event.inputs.tunnel == 'both') && (steps.cloudflare.outcome == 'failure' || steps.cloudflare.conclusion == 'failure')
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          RDP_PORT: ${{ env.RDP_PORT }}
         run: |
           Write-Host "========================================"
           Write-Host "  TAILSCALE VPN (FALLBACK)"
           Write-Host "========================================"
           
           if (-not $env:TS_AUTHKEY) { Write-Host "ERROR: TS_AUTHKEY not set"; exit 1 }
+          
+          $port = "${{ steps.rdp_setup.outputs.RDP_PORT }}"
           
           $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
           $installer = "$env:TEMP\tailscale.msi"
@@ -340,7 +337,7 @@ jobs:
           
           Write-Host "✅ TAILSCALE ACTIVE (FALLBACK)"
           Write-Host "IP   : $ip"
-          Write-Host "PORT : $env:RDP_PORT"
+          Write-Host "PORT : $port"
           Write-Host "USER : ${{ env.RDP_USER }}"
           Write-Host "PASS : ${{ env.RDP_PASS }}"
 
@@ -352,12 +349,7 @@ jobs:
           Write-Host ""
           Write-Host "  AKSES RDP:"
           Write-Host ""
-          if ('${{ github.event.inputs.tunnel }}' -eq 'cloudflare' -or '${{ github.event.inputs.tunnel }}' -eq 'both') {
-            Write-Host "  Host: ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}"
-          }
-          if ('${{ github.event.inputs.tunnel }}' -eq 'tailscale' -or '${{ github.event.inputs.tunnel }}' -eq 'both') {
-            Write-Host "  Host: (Tailscale IP):${{ env.RDP_PORT }}"
-          }
+          Write-Host "  Host: ${{ env.RDP_DOMAIN }}:${{ steps.rdp_setup.outputs.RDP_PORT }}"
           Write-Host "  User: ${{ env.RDP_USER }}"
           Write-Host "  Pass: ${{ env.RDP_PASS }}"
           Write-Host ""
@@ -372,17 +364,6 @@ jobs:
             $counter++
             $time = Get-Date -Format "HH:mm:ss"
             Write-Host "[$time] KHEN RDP ACTIVE $counter/$max"
-            
-            if ($counter % 3 -eq 0) {
-              $cpu = Get-WmiObject -Class Win32_Processor | Select-Object -ExpandProperty LoadPercentage
-              $ram = Get-WmiObject -Class Win32_OperatingSystem
-              $ramUsed = [math]::Round(($ram.TotalVisibleMemorySize - $ram.FreePhysicalMemory) / 1MB, 2)
-              $ramTotal = [math]::Round($ram.TotalVisibleMemorySize / 1MB, 2)
-              $disk = Get-PSDrive C
-              $diskFree = [math]::Round($disk.Free / 1GB, 2)
-              Write-Host "[$time] AUTO CHECK: CPU=$cpu% | RAM=$ramUsed/$ramTotal GB | DISK=$diskFree GB free"
-            }
-            
             Start-Sleep -Seconds 300
           }
 
