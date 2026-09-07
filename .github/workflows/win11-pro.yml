@@ -49,8 +49,7 @@ env:
 jobs:
   rdp:
     runs-on: windows-latest
-    timeout-minutes: ${{ fromJSON(format('[60,120,180,240,300,360][{0}]', github.event.inputs.duration)) }}
-    
+    timeout-minutes: 360
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -200,6 +199,13 @@ jobs:
         run: |
           if (-not $env:TS_AUTHKEY) {
             Write-Host "ERROR: TAILSCALE_AUTH_KEY not set!"
+            Write-Host ""
+            Write-Host "CARA DAPET:"
+            Write-Host "1. Buka https://login.tailscale.com/admin"
+            Write-Host "2. Settings -> Keys -> Generate auth key"
+            Write-Host "3. Centang Reusable"
+            Write-Host "4. Copy key (tskey-auth-xxxxx)"
+            Write-Host "5. Simpan di GitHub Secrets sebagai TAILSCALE_AUTH_KEY"
             exit 1
           }
           
@@ -259,7 +265,8 @@ jobs:
           Write-Host "Akses dari localhost:$env:RDP_PORT"
           Write-Host "========================================"
           
-          $totalSeconds = [int]${{ github.event.inputs.duration }} * 3600
+          $duration = [int]${{ github.event.inputs.duration }}
+          $totalSeconds = $duration * 3600
           $elapsed = 0
           
           while ($elapsed -lt $totalSeconds) {
