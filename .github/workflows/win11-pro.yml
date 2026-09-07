@@ -1,12 +1,12 @@
-name: KHEN RDP ULTIMATE
+name: KHEN WINDOWS 11 GAMING ULTIMATE
 
 on:
   workflow_dispatch:
     inputs:
-      colab_hostname:
+      colab_ip:
         description: 'IP Tailscale Colab (contoh: 100.x.x.x)'
         required: true
-        default: '100.100.100.100'
+        default: '100.114.92.84'
       windows_version:
         description: 'Pilih versi Windows'
         required: true
@@ -22,12 +22,12 @@ on:
         default: 'yes'
         type: choice
         options:
-          - yes
-          - no
+          - 'yes'
+          - 'no'
       duration:
         description: 'Durasi session (jam)'
         required: true
-        default: '6'
+        default: '5'
         type: choice
         options:
           - '1'
@@ -35,7 +35,6 @@ on:
           - '3'
           - '4'
           - '5'
-          - '6'
 
 permissions:
   actions: write
@@ -50,28 +49,27 @@ env:
   CHAT_ID: ${{ secrets.CHAT_ID }}
 
 jobs:
-  rdp:
+  rdp-gaming:
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 350
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cleanup
+      - name: Cleanup Space
         shell: pwsh
         run: |
           Write-Host "========================================"
-          Write-Host "  KHEN RDP ULTIMATE"
+          Write-Host "  KHEN RDP ULTIMATE WINDOWS 11"
           Write-Host "========================================"
-          Write-Host "Windows: ${{ github.event.inputs.windows_version }}"
-          Write-Host "Save Data: ${{ github.event.inputs.save_data }}"
-          Write-Host "Durasi : ${{ github.event.inputs.duration }} jam"
+          Write-Host "Windows Target: ${{ github.event.inputs.windows_version }}"
+          Write-Host "Target IP Colab: ${{ github.event.inputs.colab_ip }}"
+          Write-Host "Durasi Session: ${{ github.event.inputs.duration }} jam"
           Write-Host "========================================"
           
           $tempPaths = @(
             "C:\Users\runneradmin\AppData\Local\Temp\*",
-            "C:\Program Files\Microsoft Visual Studio",
             "C:\Program Files\dotnet"
           )
           
@@ -80,10 +78,8 @@ jobs:
               Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
             }
           }
-          
-          Write-Host "Cleanup selesai"
 
-      - name: Restore Cache
+      - name: Restore Cache Data
         id: cache
         uses: actions/cache@v4
         with:
@@ -94,311 +90,99 @@ jobs:
           restore-keys: |
             khen-data-
 
-      - name: Restore Backup
-        if: github.event.inputs.save_data == 'yes' && steps.cache.outputs.cache-hit != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: khen-data-backup
-          path: ${{ env.DATA_PATH }}
-        continue-on-error: true
-
-      - name: System Info
+      - name: Setup RDP Windows
         shell: pwsh
         run: |
-          Write-Host "========================================"
-          Write-Host "  SYSTEM INFO"
-          Write-Host "========================================"
-          
-          $os = Get-CimInstance Win32_OperatingSystem
-          $cpu = Get-CimInstance Win32_Processor
-          $ram = Get-CimInstance Win32_PhysicalMemory
-          $totalRAM = [math]::Round(($ram | Measure-Object Capacity -Sum).Sum / 1GB, 2)
-          $disk = Get-PSDrive C
-          $gpu = Get-CimInstance Win32_VideoController
-          
-          Write-Host "OS: $($os.Caption)"
-          Write-Host "CPU: $($cpu.Name) ($($cpu.NumberOfCores) Cores)"
-          Write-Host "RAM: $totalRAM GB"
-          Write-Host "GPU: $($gpu.Name)"
-          Write-Host "Disk Free: $([math]::Round($disk.Free / 1GB, 2)) GB"
-          Write-Host "========================================"
-
-      - name: Setup RDP + Render Support
-        shell: pwsh
-        run: |
-          Write-Host "========================================"
-          Write-Host "  SETUP RDP + RENDER SUPPORT"
-          Write-Host "========================================"
-          
-          $random = New-Object System.Random
-          $rdpPort = $random.Next(30000, 49999)
+          $rdpPort = 3389
           "RDP_PORT=$rdpPort" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           
-          # Enable RDP
           Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0 -Type DWord -Force
           Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "PortNumber" -Value $rdpPort -Type DWord -Force
           
-          # RDP Performance - Anti Lag
           Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableWallpaper" -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableMenuAnimations" -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableFullWindowDrag" -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableCursorShadow" -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fDisableThemes" -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "ColorDepth" -Value 2 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "CompressionLevel" -Value 2 -Type DWord -Force
           Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "fUseUDP" -Value 1 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MaxXResolution" -Value 1280 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MaxYResolution" -Value 720 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "MaxDisconnectionTime" -Value 0 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "KeepAliveTimeout" -Value 0 -Type DWord -Force
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fSingleSessionPerUser" -Value 0 -Type DWord -Force
           
-          # Firewall
           netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
-          netsh advfirewall firewall add rule name="RDP-Random" dir=in action=allow protocol=TCP localport=$rdpPort
-          netsh advfirewall firewall add rule name="Minecraft" dir=in action=allow protocol=TCP localport=25565
-          netsh advfirewall firewall add rule name="Roblox" dir=in action=allow protocol=TCP localport=49152-65535
-          netsh advfirewall firewall add rule name="Steam" dir=in action=allow protocol=TCP localport=27015-27030
           
-          # User
           net user ${{ env.RDP_USER }} ${{ env.RDP_PASS }} /add /expires:never /passwordchg:no
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
           
-          # Directories
-          $dirs = @(
-            "${{ env.DATA_PATH }}",
-            "${{ env.DATA_PATH }}\Desktop",
-            "${{ env.DATA_PATH }}\Documents",
-            "${{ env.DATA_PATH }}\Downloads",
-            "${{ env.DATA_PATH }}\Pictures",
-            "${{ env.DATA_PATH }}\Music",
-            "${{ env.DATA_PATH }}\Videos",
-            "${{ env.GAME_PATH }}",
-            "${{ env.GAME_PATH }}\Minecraft",
-            "${{ env.GAME_PATH }}\Roblox",
-            "${{ env.GAME_PATH }}\Steam",
-            "${{ env.GAME_PATH }}\Saves"
-          )
-          
-          foreach ($dir in $dirs) {
-            New-Item -ItemType Directory -Force -Path $dir -ErrorAction SilentlyContinue
-          }
-          
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  RDP + GAME SUPPORT AKTIF"
-          Write-Host "========================================"
-          Write-Host "USER : ${{ env.RDP_USER }}"
-          Write-Host "PASS : ${{ env.RDP_PASS }}"
-          Write-Host "PORT : $rdpPort"
-          Write-Host "========================================"
+          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }} -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path ${{ env.GAME_PATH }} -ErrorAction SilentlyContinue
 
-      - name: Install Game Drivers & Render Support
+      - name: Optimasi Performa CPU dan Gaming
         shell: pwsh
         run: |
-          Write-Host "========================================"
-          Write-Host "  INSTALL GAME DRIVERS & RENDER"
-          Write-Host "========================================"
-          
-          # Chocolatey
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')) 2>$null
-          
-          # Game Drivers
-          Write-Host "Installing DirectX..."
-          choco install directx -y --limit-output --ignore-checksums 2>$null
-          
-          Write-Host "Installing Vulkan..."
-          choco install vulkan-runtime -y --limit-output --ignore-checksums 2>$null
-          
-          Write-Host "Installing OpenGL..."
-          choco install opengl -y --limit-output --ignore-checksums 2>$null
-          
-          Write-Host "Installing Visual C++ Redist..."
-          choco install vcredist-all -y --limit-output --ignore-checksums 2>$null
-          
-          Write-Host "Installing OpenAL..."
-          choco install openal -y --limit-output --ignore-checksums 2>$null
-          
-          # Enable DirectX WARP (Fallback)
-          Write-Host "Enabling DirectX WARP Fallback..."
-          reg add "HKLM\SOFTWARE\Microsoft\DirectX" /v D3D12EnableExperimentalFeatures /t REG_DWORD /d 1 /f 2>$null
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v D3D12WarpDevice /t REG_DWORD /d 1 /f 2>$null
-          
-          Write-Host "Game drivers installed"
-
-      - name: Install Game Launchers
-        shell: pwsh
-        run: |
-          Write-Host "========================================"
-          Write-Host "  INSTALL GAME LAUNCHERS"
-          Write-Host "========================================"
-          
-          # Minecraft
-          Write-Host "Downloading Minecraft..."
-          $mcUrl = "https://launcher.mojang.com/download/MinecraftInstaller.msi"
-          Invoke-WebRequest -Uri $mcUrl -OutFile "$env:TEMP\MinecraftInstaller.msi" -UseBasicParsing 2>$null
-          Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\MinecraftInstaller.msi`" /quiet /norestart" -Wait 2>$null
-          
-          # Java Runtime
-          Write-Host "Installing Java Runtime..."
-          $javaUrl = "https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.exe"
-          Invoke-WebRequest -Uri $javaUrl -OutFile "$env:TEMP\java.exe" -UseBasicParsing 2>$null
-          Start-Process -FilePath "$env:TEMP\java.exe" -ArgumentList "/quiet" -Wait 2>$null
-          
-          # Roblox Player
-          Write-Host "Downloading Roblox..."
-          $robloxUrl = "https://setup.rbxcdn.com/RobloxPlayerLauncher.exe"
-          Invoke-WebRequest -Uri $robloxUrl -OutFile "$env:TEMP\RobloxPlayerLauncher.exe" -UseBasicParsing 2>$null
-          Start-Process -FilePath "$env:TEMP\RobloxPlayerLauncher.exe" -ArgumentList "/S" -Wait 2>$null
-          
-          # Roblox Studio
-          $studioUrl = "https://setup.rbxcdn.com/RobloxStudioLauncher.exe"
-          Invoke-WebRequest -Uri $studioUrl -OutFile "$env:TEMP\RobloxStudioLauncher.exe" -UseBasicParsing 2>$null
-          Start-Process -FilePath "$env:TEMP\RobloxStudioLauncher.exe" -ArgumentList "/S" -Wait 2>$null
-          
-          # Steam
-          Write-Host "Downloading Steam..."
-          $steamUrl = "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe"
-          Invoke-WebRequest -Uri $steamUrl -OutFile "$env:TEMP\SteamSetup.exe" -UseBasicParsing 2>$null
-          Start-Process -FilePath "$env:TEMP\SteamSetup.exe" -ArgumentList "/S" -Wait 2>$null
-          
-          Write-Host "Game launchers installed"
-
-      - name: Gaming Optimization
-        shell: pwsh
-        run: |
-          Write-Host "========================================"
-          Write-Host "  GAMING OPTIMIZATION"
-          Write-Host "========================================"
-          
-          # High Performance Power Plan
+          Write-Host "Mengaktifkan Power Plan High Performance..."
           powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
           
-          # Game Mode
+          Write-Host "Mengaktifkan DirectX WARP & Graphics Acceleration..."
+          reg add "HKLM\SOFTWARE\Microsoft\DirectX" /v D3D12EnableExperimentalFeatures /t REG_DWORD /d 1 /f 2>$null
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v D3D12WarpDevice /t REG_DWORD /d 1 /f 2>$null
           reg add "HKCU\Software\Microsoft\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f 2>$null
           reg add "HKCU\Software\Microsoft\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f 2>$null
-          
-          # Disable Visual Effects
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f 2>$null
-          reg add "HKCU\Control Panel\Desktop" /v MenuShowDelay /t REG_SZ /d 0 /f 2>$null
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f 2>$null
-          
-          # GPU Priority
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f 2>$null
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Priority" /t REG_DWORD /d 6 /f 2>$null
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v "SystemResponsiveness" /t REG_DWORD /d 0 /f 2>$null
-          
-          # Network Optimization
-          netsh int tcp set global autotuninglevel=normal 2>$null
-          netsh int tcp set global chimney=enabled 2>$null
-          netsh int tcp set global rss=enabled 2>$null
-          
-          Write-Host "Gaming optimization selesai"
 
-      - name: Install Tailscale
+      - name: Install Game Runtimes
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+          
+          Write-Host "Installing Direct X and Visual C++ Redistributable..."
+          Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')) 2>$null
+          choco install directx vcredist-all -y --limit-output --ignore-checksums 2>$null
+
+      - name: Install & Connect Tailscale
         shell: pwsh
         env:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
           if (-not $env:TS_AUTHKEY) {
-            Write-Host "ERROR: TAILSCALE_AUTH_KEY not set!"
-            Write-Host ""
-            Write-Host "CARA DAPET:"
-            Write-Host "1. Buka https://login.tailscale.com/admin"
-            Write-Host "2. Settings -> Keys -> Generate auth key"
-            Write-Host "3. Centang Reusable"
-            Write-Host "4. Copy key (tskey-auth-xxxxx)"
-            Write-Host "5. Simpan di GitHub Secrets sebagai TAILSCALE_AUTH_KEY"
+            Write-Host "ERROR: TAILSCALE_AUTH_KEY belum di-set di GitHub Secrets!"
             exit 1
           }
           
-          Write-Host "Installing Tailscale..."
           $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
           $installer = "$env:TEMP\tailscale.msi"
           Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-          Start-Sleep -Seconds 3
           Start-Process msiexec.exe -ArgumentList "/i `"$installer`" /quiet /norestart" -Wait
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 5
           
-          Write-Host "Login Tailscale..."
-          & "C:\Program Files\Tailscale\tailscale.exe" login --auth-key $env:TS_AUTHKEY
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TS_AUTHKEY --accept-routes
           Start-Sleep -Seconds 5
           
           $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           "TAILSCALE_IP=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  TAILSCALE AKTIF"
-          Write-Host "========================================"
-          Write-Host "GitHub Runner IP : $ip"
-          Write-Host "========================================"
+          Write-Host "Tailscale Runner IP: $ip"
 
-      - name: Connect ke Colab via Tailscale
+      - name: Setup Port Forwarding ke Colab
         shell: pwsh
         env:
-          COLAB_HOSTNAME: ${{ github.event.inputs.colab_hostname }}
+          COLAB_IP: ${{ github.event.inputs.colab_ip }}
         run: |
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  KONEK KE COLAB"
-          Write-Host "========================================"
-          Write-Host "Colab Hostname: $env:COLAB_HOSTNAME"
-          Write-Host "========================================"
-          
-          # Test koneksi
-          Test-Connection -ComputerName $env:COLAB_HOSTNAME -Count 2 -ErrorAction SilentlyContinue
-          
-          # Port forwarding
-          netsh interface portproxy add v4tov4 listenport=3389 listenaddress=0.0.0.0 connectport=3389 connectaddress=$env:COLAB_HOSTNAME
-          
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  KONEK KE COLAB BERHASIL"
-          Write-Host "========================================"
-          Write-Host "Forwarding : 3389 -> $env:COLAB_HOSTNAME:3389"
-          Write-Host "========================================"
+          Write-Host "Menghubungkan jaringan Windows Runner ke IP Colab GPU: $env:COLAB_IP"
+          netsh interface portproxy add v4tov4 listenport=3389 listenaddress=0.0.0.0 connectport=3389 connectaddress=$env:COLAB_IP
 
-      - name: Send Telegram Notification
+      - name: Kirim Notifikasi Telegram
         shell: pwsh
         env:
           BOT_TOKEN: ${{ env.BOT_TOKEN }}
           CHAT_ID: ${{ env.CHAT_ID }}
           RDP_PORT: ${{ env.RDP_PORT }}
           TAILSCALE_IP: ${{ env.TAILSCALE_IP }}
-          COLAB_HOSTNAME: ${{ github.event.inputs.colab_hostname }}
+          COLAB_IP: ${{ github.event.inputs.colab_ip }}
         run: |
           if ($env:BOT_TOKEN -and $env:CHAT_ID) {
-            $message = "🚀 RDP ACTIVE`n`nIP Tailscale Runner: $env:TAILSCALE_IP`nColab Target: $env:COLAB_HOSTNAME`nPort: $env:RDP_PORT`nUser: ${{ env.RDP_USER }}`nPass: ${{ env.RDP_PASS }}"
+            $message = "RDP WINDOWS 11 GAMING ACTIVE`n`nIP RDP Runner: $env:TAILSCALE_IP`nColab Target IP: $env:COLAB_IP`nPort: $env:RDP_PORT`nUser: ${{ env.RDP_USER }}`nPass: ${{ env.RDP_PASS }}"
             $url = "https://api.telegram.org/bot$env:BOT_TOKEN/sendMessage"
             $body = @{chat_id = $env:CHAT_ID; text = $message} | ConvertTo-Json
             Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json"
-            Write-Host "Telegram notification sent"
           }
 
-      - name: Keep Alive
+      - name: Keep Alive Loop
         shell: pwsh
         run: |
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "  RDP SESSION ACTIVE"
-          Write-Host "========================================"
-          Write-Host "USER : ${{ env.RDP_USER }}"
-          Write-Host "PASS : ${{ env.RDP_PASS }}"
-          Write-Host "PORT : $env:RDP_PORT"
-          Write-Host "========================================"
-          Write-Host "GAME SUPPORT:"
-          Write-Host "  - DirectX, Vulkan, OpenGL"
-          Write-Host "  - Minecraft, Roblox, Steam"
-          Write-Host "  - WARP Fallback Renderer"
-          Write-Host "========================================"
-          Write-Host "Akses dari $env:TAILSCALE_IP:$env:RDP_PORT"
-          Write-Host "========================================"
-          
           $duration = [int]${{ github.event.inputs.duration }}
           $totalSeconds = $duration * 3600
           $elapsed = 0
@@ -407,17 +191,17 @@ jobs:
             $remaining = $totalSeconds - $elapsed
             $hours = [math]::Floor($remaining / 3600)
             $minutes = [math]::Floor(($remaining % 3600) / 60)
-            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $hours h $minutes m remaining"
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $hours jam $minutes menit tersisa"
             Start-Sleep -Seconds 60
             $elapsed += 60
           }
 
-      - name: Upload Backup
-        if: github.event.inputs.save_data == 'yes'
+      - name: Upload Backup Data
+        if: always() && github.event.inputs.save_data == 'yes'
         uses: actions/upload-artifact@v4
         with:
           name: khen-data-backup
           path: |
             ${{ env.DATA_PATH }}
             ${{ env.GAME_PATH }}
-          retention-days: 90
+          retention-days: 7
