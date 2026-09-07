@@ -228,7 +228,7 @@ jobs:
           Write-Host "Port RDP: ${{ env.RDP_PORT }}"
           Write-Host "Domain: ${{ env.RDP_DOMAIN }}"
           
-          # START CLOUDFLARE TUNNEL DENGAN PORT DINAMIS
+          # START CLOUDFLARE TUNNEL
           $pinfo = New-Object System.Diagnostics.ProcessStartInfo
           $pinfo.FileName = ".\cloudflared.exe"
           $pinfo.Arguments = "tunnel --url tcp://localhost:${{ env.RDP_PORT }} --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN"
