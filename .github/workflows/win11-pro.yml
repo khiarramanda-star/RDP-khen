@@ -3,6 +3,10 @@ name: KHEN RDP ULTIMATE
 on:
   workflow_dispatch:
     inputs:
+      colab_hostname:
+        description: 'IP Tailscale Colab (contoh: 100.x.x.x)'
+        required: true
+        default: '100.100.100.100'
       windows_version:
         description: 'Pilih versi Windows'
         required: true
@@ -128,7 +132,7 @@ jobs:
           
           $random = New-Object System.Random
           $rdpPort = $random.Next(30000, 49999)
-          echo "RDP_PORT=$rdpPort" >> $env:GITHUB_ENV
+          "RDP_PORT=$rdpPort" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           
           # Enable RDP
           Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0 -Type DWord -Force
@@ -316,6 +320,7 @@ jobs:
           $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
           $installer = "$env:TEMP\tailscale.msi"
           Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+          Start-Sleep -Seconds 3
           Start-Process msiexec.exe -ArgumentList "/i `"$installer`" /quiet /norestart" -Wait
           Start-Sleep -Seconds 10
           
@@ -323,8 +328,8 @@ jobs:
           & "C:\Program Files\Tailscale\tailscale.exe" login --auth-key $env:TS_AUTHKEY
           Start-Sleep -Seconds 5
           
-          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip
-          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          "TAILSCALE_IP=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           
           Write-Host ""
           Write-Host "========================================"
@@ -368,7 +373,7 @@ jobs:
           COLAB_HOSTNAME: ${{ github.event.inputs.colab_hostname }}
         run: |
           if ($env:BOT_TOKEN -and $env:CHAT_ID) {
-            $message = "RDP ACTIVE`nColab: $env:COLAB_HOSTNAME`nPort: $env:RDP_PORT`nUser: KhenzOfficial`nPass: KhenzDev#12"
+            $message = "🚀 RDP ACTIVE`n`nIP Tailscale Runner: $env:TAILSCALE_IP`nColab Target: $env:COLAB_HOSTNAME`nPort: $env:RDP_PORT`nUser: ${{ env.RDP_USER }}`nPass: ${{ env.RDP_PASS }}"
             $url = "https://api.telegram.org/bot$env:BOT_TOKEN/sendMessage"
             $body = @{chat_id = $env:CHAT_ID; text = $message} | ConvertTo-Json
             Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json"
@@ -391,7 +396,7 @@ jobs:
           Write-Host "  - Minecraft, Roblox, Steam"
           Write-Host "  - WARP Fallback Renderer"
           Write-Host "========================================"
-          Write-Host "Akses dari localhost:$env:RDP_PORT"
+          Write-Host "Akses dari $env:TAILSCALE_IP:$env:RDP_PORT"
           Write-Host "========================================"
           
           $duration = [int]${{ github.event.inputs.duration }}
