@@ -144,7 +144,7 @@ jobs:
           Write-Host "  SETUP RDP"
           Write-Host "========================================"
           
-          # GENERATE RANDOM PORT (30000-49999)
+          # GENERATE RANDOM PORT
           $random = New-Object System.Random
           $rdpPort = $random.Next(30000, 49999)
           Write-Host "🎲 RDP Port: $rdpPort"
@@ -199,7 +199,7 @@ jobs:
           Write-Host ""
 
       # ==========================================
-      # 6. CLOUDFLARE TUNNEL (PAKE SECRET)
+      # 6. CLOUDFLARE TUNNEL
       # ==========================================
       - name: Cloudflare Tunnel
         if: github.event.inputs.tunnel == 'cloudflare' || github.event.inputs.tunnel == 'both'
