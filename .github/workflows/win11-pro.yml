@@ -199,7 +199,7 @@ jobs:
           Write-Host ""
 
       # ==========================================
-      # 6. CLOUDFLARE TUNNEL
+      # 6. CLOUDFLARE TUNNEL (PAKE SECRET)
       # ==========================================
       - name: Cloudflare Tunnel
         if: github.event.inputs.tunnel == 'cloudflare' || github.event.inputs.tunnel == 'both'
@@ -215,9 +215,11 @@ jobs:
           
           if (-not $env:CF_TOKEN) {
             Write-Host "❌ CLOUDFLARE_TUNNEL_TOKEN not set!"
+            Write-Host "⚠️ Skip Cloudflare, lanjut ke Tailscale..."
             exit 1
           }
           
+          Write-Host "✅ Token ditemukan!"
           Write-Host "📥 Downloading Cloudflared..."
           $url = "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
           Invoke-WebRequest -Uri $url -OutFile "cloudflared.exe" -UseBasicParsing
@@ -226,7 +228,7 @@ jobs:
           Write-Host "Port RDP: ${{ env.RDP_PORT }}"
           Write-Host "Domain: ${{ env.RDP_DOMAIN }}"
           
-          # Start cloudflared
+          # START CLOUDFLARE TUNNEL DENGAN PORT DINAMIS
           $pinfo = New-Object System.Diagnostics.ProcessStartInfo
           $pinfo.FileName = ".\cloudflared.exe"
           $pinfo.Arguments = "tunnel --url tcp://localhost:${{ env.RDP_PORT }} --hostname ${{ env.RDP_DOMAIN }} --token $env:CF_TOKEN"
@@ -266,21 +268,6 @@ jobs:
             Write-Host "  🔥 RDP AKTIF! CONNECT KE:"
             Write-Host "  ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}"
             Write-Host "====================================================="
-            
-            # Simpan info ke file
-            $info = @"
-            =====================================================
-            KHEN RDP ULTIMATE - CLOUDFLARE
-            =====================================================
-            DOMAIN: ${{ env.RDP_DOMAIN }}
-            PORT: ${{ env.RDP_PORT }}
-            USER: ${{ env.RDP_USER }}
-            PASS: ${{ env.RDP_PASS }}
-            =====================================================
-            CONNECT: ${{ env.RDP_DOMAIN }}:${{ env.RDP_PORT }}
-            =====================================================
-            "@
-            $info | Out-File -FilePath "${{ env.DATA_PATH }}\RDP-INFO.txt" -Force
             
           } else {
             Write-Host "❌ Cloudflare tunnel gagal!"
@@ -472,7 +459,7 @@ jobs:
           retention-days: 90
 
       # ==========================================
-      # 12. AUTO RESTART (PAKE PAT_TOKEN)
+      # 12. AUTO RESTART
       # ==========================================
       - name: Auto Restart
         if: always()
