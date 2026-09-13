@@ -12,7 +12,7 @@ on:
           - windows-11-gaming
           - windows-11-pro
       save_data:
-        description: 'Simpan data ke Google Drive setelah session?'
+        description: 'Simpan data ke Google Drive?'
         required: true
         default: 'yes'
         type: choice
@@ -40,8 +40,7 @@ env:
   RDP_PASS: KhenzDev#12
   DATA_PATH: C:\khen-data
   GAME_PATH: D:\games
-  BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-  CHAT_ID: ${{ secrets.CHAT_ID }}
+  TS_STATE_DIR: C:\khen-data\tailscale-state
 
 jobs:
   rdp-gaming:
@@ -76,16 +75,47 @@ jobs:
             }
           }
 
-      - name: Restore Cache Data
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.DATA_PATH }}
-            ${{ env.GAME_PATH }}
-          key: khen-data-${{ github.run_id }}
-          restore-keys: |
-            khen-data-
+      - name: Setup Data Directories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ env.DATA_PATH }}" | Out-Null
+          New-Item -ItemType Directory -Force -Path "${{ env.GAME_PATH }}" | Out-Null
+          New-Item -ItemType Directory -Force -Path "${{ env.TS_STATE_DIR }}" | Out-Null
+          Write-Host "Directories created."
+
+      # =====================================================
+      # RESTORE STATE TAILSCALE DARI GOOGLE DRIVE
+      # =====================================================
+      - name: Restore Tailscale State from Google Drive
+        if: github.event.inputs.save_data == 'yes'
+        shell: pwsh
+        continue-on-error: true
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+        run: |
+          Write-Host "=== RESTORING TAILSCALE STATE ==="
+
+          if (-not $env:GDRIVE_CREDENTIALS) {
+            Write-Host "WARNING: GDRIVE_CREDENTIALS belum di-set, skip restore."
+            exit 0
+          }
+
+          if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
+            choco install rclone -y --limit-output --no-progress 2>$null
+          }
+
+          $rcloneConfigPath = "$env:APPDATA\rclone"
+          New-Item -ItemType Directory -Force -Path $rcloneConfigPath | Out-Null
+          $env:GDRIVE_CREDENTIALS | Out-File -FilePath "$rcloneConfigPath\rclone.conf" -Encoding utf8
+
+          Write-Host "Downloading Tailscale state from Drive..."
+          rclone copy "gdrive:khen-backup/tailscale-state" "${{ env.TS_STATE_DIR }}" --progress 2>$null
+
+          if (Test-Path "${{ env.TS_STATE_DIR }}\tailscaled.state") {
+            Write-Host "Tailscale state restored! IP akan tetap sama."
+          } else {
+            Write-Host "State belum ada, ini run pertama. IP akan dibuat baru."
+          }
 
       # =====================================================
       # SETUP RDP WINDOWS 11
@@ -107,9 +137,6 @@ jobs:
           net localgroup Administrators ${{ env.RDP_USER }} /add
           net localgroup "Remote Desktop Users" ${{ env.RDP_USER }} /add
 
-          New-Item -ItemType Directory -Force -Path ${{ env.DATA_PATH }} -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path ${{ env.GAME_PATH }} -ErrorAction SilentlyContinue
-
       # =====================================================
       # ANTI-LAG & GAMING OPTIMIZATION
       # =====================================================
@@ -118,11 +145,9 @@ jobs:
         run: |
           Write-Host "=== ANTI-LAG CONFIGURATION ==="
 
-          # Power Plan Ultimate Performance
           powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
           powercfg -setactive e9a42b02-d5df-448d-aa00-03f14749eb61 2>$null
 
-          # Network Anti-Lag
           netsh int tcp set global autotuninglevel=normal
           netsh int tcp set global chimney=enabled
           netsh int tcp set global dca=enabled
@@ -132,7 +157,6 @@ jobs:
           netsh int tcp set heuristics disabled
           netsh int tcp set supplemental internet congestionprovider=ctcp
 
-          # Disable Nagle's Algorithm (reduce latency)
           $interfaces = Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
           foreach ($i in $interfaces) {
             Set-ItemProperty -Path $i.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -ErrorAction SilentlyContinue
@@ -140,145 +164,19 @@ jobs:
             Set-ItemProperty -Path $i.PSPath -Name "TcpDelAckTicks" -Value 0 -Type DWord -ErrorAction SilentlyContinue
           }
 
-          # Game Mode & GPU Scheduling
           reg add "HKCU\Software\Microsoft\GameBar" /v AllowAutoGameMode /t REG_DWORD /d 1 /f
           reg add "HKCU\Software\Microsoft\GameBar" /v AutoGameModeEnabled /t REG_DWORD /d 1 /f
           reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v HwSchMode /t REG_DWORD /d 2 /f
-          reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers" /v D3D12WarpDevice /t REG_DWORD /d 1 /f
-          reg add "HKLM\SOFTWARE\Microsoft\DirectX" /v D3D12EnableExperimentalFeatures /t REG_DWORD /d 1 /f
-
-          # Disable Game DVR (reduce stutter)
           reg add "HKCU\System\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f
-          reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f
 
-          # CPU Priority for Games
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 0 /f
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "GPU Priority" /t REG_DWORD /d 8 /f
           reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Priority" /t REG_DWORD /d 6 /f
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "Scheduling Category" /t REG_SZ /d "High" /f
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games" /v "SFIO Priority" /t REG_SZ /d "High" /f
 
-          # Visual Effects - Performance Mode
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f
-
-          # Disable Telemetry & Background Apps
-          reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" /v AllowTelemetry /t REG_DWORD /d 0 /f
-          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications" /v GlobalUserDisabled /t REG_DWORD /d 1 /f
-
-          Write-Host "Anti-Lag Configuration DONE!"
+          Write-Host "Anti-Lag DONE!"
 
       # =====================================================
-      # DOWNLOAD DRIVER GAME (Untuk Game yang Tidak Support)
-      # =====================================================
-      - name: Download Game Drivers & Runtimes
-        shell: pwsh
-        run: |
-          Write-Host "=== DOWNLOADING GAME DRIVERS & RUNTIMES ==="
-          Set-ExecutionPolicy Bypass -Scope Process -Force
-          [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-
-          $driverPath = "C:\khen-data\drivers"
-          New-Item -ItemType Directory -Force -Path $driverPath | Out-Null
-
-          # Install Chocolatey
-          Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')) 2>$null
-
-          # Install Game Runtimes
-          Write-Host "Installing DirectX, VC++, .NET Runtimes..."
-          choco install directx vcredist-all dotnet-runtime -y --limit-output --ignore-checksums 2>$null
-
-          # Download Legacy Game Drivers & Compatibility
-          Write-Host "Downloading Legacy Game Compatibility Drivers..."
-
-          # DirectX 9.0c (untuk game lama)
-          $dx9 = "$driverPath\directx_jun2010_redist.exe"
-          Invoke-WebRequest -Uri "https://download.microsoft.com/download/8/4/A/84A35BF1-DAFE-4AE8-82AF-AD2AE20B6B14/directx_Jun2010_redist.exe" -OutFile $dx9 -UseBasicParsing -ErrorAction SilentlyContinue
-          if (Test-Path $dx9) {
-            Start-Process $dx9 -ArgumentList "/Q /T:$driverPath\dx9" -Wait -ErrorAction SilentlyContinue
-          }
-
-          # Visual C++ Legacy (2005, 2008, 2010, 2012, 2013)
-          $vcredistUrls = @{
-            "vcredist_2005_x86" = "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE"
-            "vcredist_2005_x64" = "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE"
-            "vcredist_2008_x86" = "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-CEADF5C1E9C4/vcredist_x86.exe"
-            "vcredist_2008_x64" = "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-CEADF5C1E9C4/vcredist_x64.exe"
-            "vcredist_2010_x86" = "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x86.exe"
-            "vcredist_2010_x64" = "https://download.microsoft.com/download/1/6/5/165255E7-1014-4D0A-B094-B6A430A6BFFC/vcredist_x64.exe"
-          }
-
-          foreach ($vc in $vcredistUrls.GetEnumerator()) {
-            $outFile = "$driverPath\$($vc.Key).exe"
-            Write-Host "Downloading $($vc.Key)..."
-            Invoke-WebRequest -Uri $vc.Value -OutFile $outFile -UseBasicParsing -ErrorAction SilentlyContinue
-            if (Test-Path $outFile) {
-              Start-Process $outFile -ArgumentList "/install /quiet /norestart" -Wait -ErrorAction SilentlyContinue
-            }
-          }
-
-          # Install .NET Framework Legacy (3.5 & 4.8 untuk game lama)
-          Write-Host "Installing .NET Framework 3.5 & 4.8..."
-          DISM /Online /Enable-Feature /FeatureName:NetFx3 /All /NoRestart 2>$null
-          choco install dotnetfx -y --limit-output --ignore-checksums 2>$null
-
-          # Download GPU Driver (Mesa3D untuk software rendering - support game tanpa GPU)
-          Write-Host "Downloading Mesa3D (Software GPU Driver for unsupported games)..."
-          $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/24.2.0/mesa3d-24.2.0-release-msvc.7z"
-          $mesaFile = "$driverPath\mesa3d.7z"
-          Invoke-WebRequest -Uri $mesaUrl -OutFile $mesaFile -UseBasicParsing -ErrorAction SilentlyContinue
-
-          # Download DXVK (DirectX to Vulkan translation - untuk game yang butuh GPU)
-          Write-Host "Downloading DXVK (DirectX 9/10/11 to Vulkan)..."
-          $dxvkUrl = "https://github.com/doitsujin/dxvk/releases/download/v2.4.1/dxvk-2.4.1.tar.gz"
-          $dxvkFile = "$driverPath\dxvk.tar.gz"
-          Invoke-WebRequest -Uri $dxvkUrl -OutFile $dxvkFile -UseBasicParsing -ErrorAction SilentlyContinue
-
-          # Download OpenAL (audio untuk game lama)
-          Write-Host "Downloading OpenAL (Legacy Game Audio)..."
-          Invoke-WebRequest -Uri "https://openal.org/downloads/oalinst.zip" -OutFile "$driverPath\oalinst.zip" -UseBasicParsing -ErrorAction SilentlyContinue
-          if (Test-Path "$driverPath\oalinst.zip") {
-            Expand-Archive -Path "$driverPath\oalinst.zip" -DestinationPath "$driverPath\openal" -Force -ErrorAction SilentlyContinue
-            if (Test-Path "$driverPath\openal\oalinst.exe") {
-              Start-Process "$driverPath\openal\oalinst.exe" -ArgumentList "/s" -Wait -ErrorAction SilentlyContinue
-            }
-          }
-
-          # Download PhysX (untuk game yang butuh physics)
-          Write-Host "Downloading NVIDIA PhysX Legacy..."
-          Invoke-WebRequest -Uri "https://us.download.nvidia.com/Windows/9.21.0713/PhysX_9.21.0713_SystemSoftware.exe" -OutFile "$driverPath\PhysX.exe" -UseBasicParsing -ErrorAction SilentlyContinue
-          if (Test-Path "$driverPath\PhysX.exe") {
-            Start-Process "$driverPath\PhysX.exe" -ArgumentList "/quiet /norestart" -Wait -ErrorAction SilentlyContinue
-          }
-
-          Write-Host "=== ALL GAME DRIVERS DOWNLOADED ==="
-          Get-ChildItem $driverPath -ErrorAction SilentlyContinue | Select-Object Name, Length
-
-      # =====================================================
-      # KONFIGURASI ANTI-CRASH UNTUK GAME TIDAK SUPPORT
-      # =====================================================
-      - name: Configure Game Compatibility
-        shell: pwsh
-        run: |
-          Write-Host "=== CONFIGURING GAME COMPATIBILITY MODE ==="
-
-          # Global Compatibility Settings untuk game lama
-          reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" /v "*" /t REG_SZ /d "~ RUNASADMIN DISABLEDXMAXIMIZEDWINDOWEDMODE HIGHDPIAWARE" /f 2>$null
-
-          # Disable Fullscreen Optimizations globally
-          reg add "HKCU\System\GameConfigStore" /v GameDVR_FSEBehaviorMode /t REG_DWORD /d 2 /f
-          reg add "HKCU\System\GameConfigStore" /v GameDVR_HonorUserFSEBehaviorMode /t REG_DWORD /d 1 /f
-          reg add "HKCU\System\GameConfigStore" /v GameDVR_DXGIHonorFSEWindowsCompatible /t REG_DWORD /d 1 /f
-
-          # Enable Legacy DirectPlay (untuk game DirectX 8 dan lebih lama)
-          DISM /Online /Enable-Feature /FeatureName:DirectPlay /All /NoRestart 2>$null
-
-          # Set GPU preference to High Performance
-          reg add "HKCU\Software\Microsoft\DirectX\UserGpuPreferences" /v "DirectXUserGlobalSettings" /t REG_SZ /d "VRROptimizeEnable=0;SwapEffectUpgradeEnable=1;" /f
-
-          Write-Host "Game Compatibility Mode CONFIGURED!"
-
-      # =====================================================
-      # INSTALL TAILSCALE
+      # INSTALL TAILSCALE (NON-EPHEMERAL + STATE PERSISTENT)
       # =====================================================
       - name: Install & Connect Tailscale
         shell: pwsh
@@ -286,7 +184,7 @@ jobs:
           TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
           if (-not $env:TS_AUTHKEY) {
-            Write-Host "ERROR: TAILSCALE_AUTH_KEY belum di-set di GitHub Secrets!"
+            Write-Host "ERROR: TAILSCALE_AUTH_KEY belum di-set!"
             exit 1
           }
 
@@ -296,40 +194,62 @@ jobs:
           Start-Process msiexec.exe -ArgumentList "/i `"$installer`" /quiet /norestart" -Wait
           Start-Sleep -Seconds 5
 
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=$env:TS_AUTHKEY --accept-routes
-          Start-Sleep -Seconds 5
+          # Stop service dulu biar bisa pakai custom state
+          Stop-Service Tailscale -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
 
-          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-          "TAILSCALE_IP=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Tailscale Runner IP: $ip"
+          $tsExe = "C:\Program Files\Tailscale\tailscale.exe"
+          $tsdExe = "C:\Program Files\Tailscale\tailscaled.exe"
 
-      # =====================================================
-      # NOTIFIKASI TELEGRAM
-      # =====================================================
-      - name: Kirim Notifikasi Telegram
-        shell: pwsh
-        env:
-          BOT_TOKEN: ${{ env.BOT_TOKEN }}
-          CHAT_ID: ${{ env.CHAT_ID }}
-          RDP_PORT: ${{ env.RDP_PORT }}
-          TAILSCALE_IP: ${{ env.TAILSCALE_IP }}
-        run: |
-          if ($env:BOT_TOKEN -and $env:CHAT_ID) {
-            $message = "RDP WINDOWS 11 GAMING ACTIVE`n`nIP RDP: $env:TAILSCALE_IP`nPort: $env:RDP_PORT`nUser: ${{ env.RDP_USER }}`nPass: ${{ env.RDP_PASS }}`n`nAnti-Lag: ON`nGame Drivers: INSTALLED"
-            $url = "https://api.telegram.org/bot$env:BOT_TOKEN/sendMessage"
-            $body = @{chat_id = $env:CHAT_ID; text = $message} | ConvertTo-Json
-            Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json"
+          # Copy state yang sudah di-restore ke lokasi default Tailscale
+          $defaultStatePath = "C:\ProgramData\Tailscale\tailscaled.state"
+          New-Item -ItemType Directory -Force -Path "C:\ProgramData\Tailscale" | Out-Null
+
+          if (Test-Path "${{ env.TS_STATE_DIR }}\tailscaled.state") {
+            Copy-Item "${{ env.TS_STATE_DIR }}\tailscaled.state" $defaultStatePath -Force
+            Write-Host "State lama dipakai, IP harusnya tetap sama."
+          } else {
+            Write-Host "State baru, IP akan dibuat."
           }
 
+          # Restart service
+          Start-Service Tailscale
+          Start-Sleep -Seconds 5
+
+          # Connect ke Tailscale
+          & $tsExe up --authkey=$env:TS_AUTHKEY --accept-routes --reset
+          Start-Sleep -Seconds 8
+
+          $ip = & $tsExe ip -4
+          "TAILSCALE_IP=$ip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Tailscale IP: $ip"
+          Write-Host "RDP: $ip:3389 | User: ${{ env.RDP_USER }} | Pass: ${{ env.RDP_PASS }}"
+
       # =====================================================
-      # KEEP ALIVE LOOP
+      # KEEP ALIVE + AUTO BACKUP KE DRIVE
       # =====================================================
-      - name: Keep Alive Loop
+      - name: Keep Alive Loop with Auto Backup
         shell: pwsh
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: |
           $duration = [int]${{ github.event.inputs.duration }}
           $totalSeconds = $duration * 3600
           $elapsed = 0
+          $backupInterval = 1800  # backup tiap 30 menit
+          $lastBackup = 0
+
+          # Setup rclone kalau save_data = yes
+          $rcloneReady = $false
+          if ("${{ github.event.inputs.save_data }}" -eq "yes" -and $env:GDRIVE_CREDENTIALS) {
+            if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
+              choco install rclone -y --limit-output --no-progress 2>$null
+            }
+            $rcloneConfigPath = "$env:APPDATA\rclone"
+            New-Item -ItemType Directory -Force -Path $rcloneConfigPath | Out-Null
+            $env:GDRIVE_CREDENTIALS | Out-File -FilePath "$rcloneConfigPath\rclone.conf" -Encoding utf8
+            $rcloneReady = $true
+          }
 
           while ($elapsed -lt $totalSeconds) {
             $remaining = $totalSeconds - $elapsed
@@ -338,45 +258,61 @@ jobs:
             Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $hours jam $minutes menit tersisa"
             Start-Sleep -Seconds 60
             $elapsed += 60
+
+            # Auto backup tiap 30 menit
+            if ($rcloneReady -and ($elapsed - $lastBackup -ge $backupInterval)) {
+              Write-Host "[BACKUP] Mengirim data ke Google Drive..."
+              rclone copy "${{ env.DATA_PATH }}" "gdrive:khen-backup/data" --transfers 8 --quiet 2>$null
+              rclone copy "${{ env.GAME_PATH }}" "gdrive:khen-backup/games" --transfers 8 --quiet 2>$null
+              Write-Host "[BACKUP] Selesai."
+              $lastBackup = $elapsed
+            }
           }
 
       # =====================================================
-      # SAVE DATA KE GOOGLE DRIVE
+      # SAVE TAILSCALE STATE + DATA KE DRIVE
       # =====================================================
-      - name: Save Data to Google Drive
+      - name: Save Everything to Google Drive
         if: always() && github.event.inputs.save_data == 'yes'
         shell: pwsh
+        timeout-minutes: 15
         env:
           GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
         run: |
-          Write-Host "=== SAVING DATA TO GOOGLE DRIVE ==="
+          Write-Host "=== SAVING TO GOOGLE DRIVE ==="
 
           if (-not $env:GDRIVE_CREDENTIALS) {
-            Write-Host "WARNING: GDRIVE_CREDENTIALS belum di-set, skip upload ke Google Drive"
+            Write-Host "WARNING: GDRIVE_CREDENTIALS belum di-set, skip."
             exit 0
           }
 
-          # Install rclone untuk upload ke Google Drive
-          choco install rclone -y --limit-output 2>$null
+          if (-not (Get-Command rclone -ErrorAction SilentlyContinue)) {
+            choco install rclone -y --limit-output --no-progress 2>$null
+          }
 
-          # Setup rclone config dari credentials
           $rcloneConfigPath = "$env:APPDATA\rclone"
           New-Item -ItemType Directory -Force -Path $rcloneConfigPath | Out-Null
           $env:GDRIVE_CREDENTIALS | Out-File -FilePath "$rcloneConfigPath\rclone.conf" -Encoding utf8
 
-          # Upload data ke Google Drive
-          $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-          Write-Host "Uploading data to Google Drive..."
+          # Copy state Tailscale terkini
+          $tsStateLive = "C:\ProgramData\Tailscale\tailscaled.state"
+          if (Test-Path $tsStateLive) {
+            Copy-Item $tsStateLive "${{ env.TS_STATE_DIR }}\tailscaled.state" -Force -ErrorAction SilentlyContinue
+            Write-Host "Tailscale state disimpan."
+          }
 
-          rclone copy "${{ env.DATA_PATH }}" "gdrive:khen-backup/data_$timestamp" --progress 2>$null
-          rclone copy "${{ env.GAME_PATH }}" "gdrive:khen-backup/games_$timestamp" --progress 2>$null
+          # Backup data
+          Write-Host "Uploading data ke Drive..."
+          rclone copy "${{ env.DATA_PATH }}" "gdrive:khen-backup/data" --transfers 8 --progress 2>$null
+          rclone copy "${{ env.GAME_PATH }}" "gdrive:khen-backup/games" --transfers 8 --progress 2>$null
 
-          Write-Host "Data berhasil di-upload ke Google Drive!"
-          Write-Host "Folder: khen-backup/data_$timestamp"
+          # Backup tailscale state (buat run berikutnya)
+          rclone copy "${{ env.TS_STATE_DIR }}" "gdrive:khen-backup/tailscale-state" --progress 2>$null
+
+          Write-Host "Semua data tersimpan di Drive!"
 
       # =====================================================
-      # BACKUP KE ARTIFACT (Fallback)
+      # ARTIFACT FALLBACK
       # =====================================================
       - name: Upload Backup Artifact
         if: always() && github.event.inputs.save_data == 'yes'
